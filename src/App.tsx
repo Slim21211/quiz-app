@@ -1,4 +1,13 @@
-import { BrowserRouter, Routes, Route, NavLink, Navigate, Outlet, Link } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  NavLink,
+  Navigate,
+  Outlet,
+  Link,
+  useLocation,
+} from 'react-router-dom';
 import { Provider } from 'react-redux';
 import { store } from './app/store';
 import { useGetSessionQuery, useLogoutMutation } from './app/api';
@@ -14,48 +23,58 @@ import styles from './App.module.scss';
 
 function Layout() {
   useTelegram();
+  const { pathname } = useLocation();
+  const showingQuizResults = /^\/quiz\/[^/]+\/results\/?$/.test(pathname);
   const { data } = useGetSessionQuery();
   const [logout, { error, isLoading }] = useLogoutMutation();
   return (
     <div className={styles.app}>
       <header className={styles.header}>
-        <Link className={styles.brand} to="/" aria-label="Quizroom — каталог квизов">
-          <span className={styles.brandMark}>Q</span>Quizroom
-        </Link>
-        <nav className={styles.nav} aria-label="Главная навигация">
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) => (isActive ? styles.activeNav : undefined)}
-          >
-            Квизы
-          </NavLink>
-          <NavLink
-            to="/results"
-            className={({ isActive }) => (isActive ? styles.activeNav : undefined)}
-          >
-            Результаты
-          </NavLink>
-          <NavLink
-            to="/admin/quizzes"
-            className={({ isActive }) => (isActive ? styles.activeNav : undefined)}
-          >
-            Управление
-          </NavLink>
-        </nav>
-        {data?.admin && (
-          <button
-            className={styles.textButton}
-            disabled={isLoading}
-            onClick={() => {
-              void logout()
-                .unwrap()
-                .catch(() => {});
-            }}
-          >
-            Выйти
-          </button>
-        )}
+        <div className={styles.headerInner}>
+          <Link className={styles.brand} to="/" aria-label="Quizroom — каталог квизов">
+            <span className={styles.brandMark}>Q</span>Quizroom
+          </Link>
+          <nav className={styles.nav} aria-label="Главная навигация">
+            <NavLink
+              to="/"
+              end
+              className={({ isActive }) =>
+                isActive || (pathname.startsWith('/quiz/') && !showingQuizResults)
+                  ? styles.activeNav
+                  : undefined
+              }
+            >
+              Квизы
+            </NavLink>
+            <NavLink
+              to="/results"
+              className={({ isActive }) =>
+                isActive || showingQuizResults ? styles.activeNav : undefined
+              }
+            >
+              Результаты
+            </NavLink>
+            <NavLink
+              to="/admin"
+              className={({ isActive }) => (isActive ? styles.activeNav : undefined)}
+            >
+              Управление
+            </NavLink>
+          </nav>
+          {data?.admin && (
+            <button
+              className={styles.textButton}
+              disabled={isLoading}
+              onClick={() => {
+                void logout()
+                  .unwrap()
+                  .catch(() => {});
+              }}
+            >
+              Выйти
+            </button>
+          )}
+        </div>
       </header>
       <main className={styles.main}>
         {error && <Feedback error message={errorMessage(error)} />}

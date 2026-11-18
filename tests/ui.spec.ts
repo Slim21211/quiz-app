@@ -1,12 +1,17 @@
 import type { Page } from '@playwright/test';
-import type { Quiz, Question, ParticipantWithAnswers } from '../src/types';
+import type { Quiz, Question, ParticipantWithAnswers, QuizProgress } from '../src/types';
 import { test, expect } from '@playwright/test';
 
 const quizId = '00000000-0000-4000-8000-000000000001';
 const questionId = '00000000-0000-4000-8000-000000000002';
 const participantId = '00000000-0000-4000-8000-000000000003';
 
-async function mockApi(page: Page, initiallyAdmin = false): Promise<void> {
+async function mockApi(
+  page: Page,
+  initiallyAdmin = false,
+  initialProgress: QuizProgress[] = [],
+): Promise<void> {
+  let progress = initialProgress;
   let admin = initiallyAdmin;
   const quizzes: Quiz[] = [
     {
@@ -50,7 +55,8 @@ async function mockApi(page: Page, initiallyAdmin = false): Promise<void> {
     const method = request.method();
     const payload: unknown = request.postDataJSON();
     let response: unknown;
-    if (action === 'session') response = { admin };
+    if (action === 'my-progress') response = progress;
+    else if (action === 'session') response = { admin };
     else if (action === 'login') {
       admin = true;
       response = { admin: true };
@@ -128,26 +134,45 @@ async function mockApi(page: Page, initiallyAdmin = false): Promise<void> {
       participants[0].answers[0].is_correct = payload.is_correct;
       response = { success: true };
     } else if (action === 'results')
-      response = [
-        {
-          id: participantId,
-          name: 'Команда Альфа',
-          correct_count: 1,
-          answered_count: 1,
-          pending_count: 0,
-          total_count: 1,
-        },
-        {
-          id: 'another-participant',
-          name: 'Команда Бета',
-          correct_count: 1,
-          answered_count: 1,
-          pending_count: 0,
-          total_count: 1,
-        },
-      ];
+      response = {
+        ranked: [
+          {
+            id: participantId,
+            name: 'Команда Альфа',
+            correct_count: 1,
+            answered_count: 1,
+            pending_count: 0,
+            total_count: 1,
+          },
+          {
+            id: 'another-participant',
+            name: 'Команда Бета',
+            correct_count: 1,
+            answered_count: 1,
+            pending_count: 0,
+            total_count: 1,
+          },
+        ],
+        pending: [
+          { id: 'waiting-participant', name: 'Команда Гамма', checked_count: 0, total_count: 1 },
+        ],
+        playing: [
+          { id: 'playing-participant', name: 'Команда Дельта', answered_count: 0, total_count: 1 },
+        ],
+      };
     else if (action === 'play') {
       const answered = typeof payload === 'object' && payload !== null && 'question_id' in payload;
+      if (answered)
+        progress = [
+          {
+            quiz_id: quizId,
+            correct_count: null,
+            answered_count: 1,
+            pending_count: 1,
+            total_count: 1,
+            completed: true,
+          },
+        ];
       response = {
         question: answered
           ? null
@@ -169,7 +194,7 @@ async function mockApi(page: Page, initiallyAdmin = false): Promise<void> {
 test('catalog is responsive and links to individual quiz results', async ({ page }, testInfo) => {
   await mockApi(page);
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Выберите свой квиз' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Выберите квиз' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Кино без границ' })).toBeVisible();
   const hasOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > window.innerWidth,
@@ -181,9 +206,13 @@ test('catalog is responsive and links to individual quiz results', async ({ page
   });
   await page.getByRole('link', { name: 'Результаты', exact: true }).last().click();
   await expect(page).toHaveURL(/\/quiz\/cinema\/results$/);
-  await expect(page.getByRole('table')).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Итоговые результаты' })).toBeVisible();
   await expect(
-    page.getByRole('row').filter({ hasText: 'Команда Бета' }).locator('td').first(),
+    page
+      .getByRole('list', { name: 'Итоговые результаты' })
+      .getByRole('listitem')
+      .filter({ hasText: 'Команда Бета' })
+      .getByLabel('Место 1'),
   ).toHaveText('1');
 });
 
@@ -195,9 +224,9 @@ test('participant starts a quiz, submits an answer and reaches results', async (
   await expect(page.getByRole('heading', { name: 'Кто снял фильм «Сталкер»?' })).toBeVisible();
   await page.getByLabel('Ваш ответ').fill('Андрей Тарковский');
   await page.getByRole('button', { name: 'Отправить ответ' }).click();
-  await expect(page.getByRole('heading', { name: 'Ваши ответы сохранены' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Смотреть результаты' })).toBeVisible();
   await page.getByRole('link', { name: 'Смотреть результаты' }).click();
-  await expect(page.getByRole('table')).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Итоговые результаты' })).toBeVisible();
 });
 
 test('administrator signs in and creates a quiz with its own address', async ({ page }) => {
@@ -211,7 +240,7 @@ test('administrator signs in and creates a quiz with its own address', async ({ 
   await page.getByLabel('Адрес квиза').fill('science');
   await page.getByRole('button', { name: 'Создать черновик' }).click();
   await expect(page.getByText('Черновик создан.', { exact: false })).toBeVisible();
-  await expect(page.getByRole('combobox')).toHaveValue('00000000-0000-4000-8000-000000000004');
+  await expect(page.getByRole('combobox')).toHaveValue('Наука вокруг нас (черновик)');
   await page.getByLabel('Текст вопроса').fill('Как называется наша галактика?');
   await page.getByLabel('Правильный ответ', { exact: false }).fill('Млечный Путь');
   await page.getByRole('button', { name: 'Добавить вопрос', exact: true }).click();
@@ -244,4 +273,190 @@ test('catalog failure displays a retry action instead of endless loading', async
   await page.goto('/');
   await expect(page.getByRole('alert')).toContainText('Временная ошибка базы');
   await expect(page.getByRole('button', { name: 'Повторить' })).toBeVisible();
+});
+
+test('all three steps are visible and the header remains aligned when scrolling', async ({
+  page,
+}) => {
+  await mockApi(page, true);
+  await page.goto('/');
+  const steps = page.getByRole('list', { name: 'Как играть' });
+  await expect(steps.getByRole('listitem')).toHaveCount(3);
+  for (const step of await steps.getByRole('listitem').all()) await expect(step).toBeVisible();
+  const navigation = page.getByRole('navigation', { name: 'Главная навигация' });
+  const bounds = await navigation.getByRole('link').evaluateAll((links) =>
+    links.map((link) => ({
+      width: link.getBoundingClientRect().width,
+      top: link.getBoundingClientRect().top,
+    })),
+  );
+  expect(
+    Math.max(...bounds.map((bound) => bound.width)) -
+      Math.min(...bounds.map((bound) => bound.width)),
+  ).toBeLessThan(1);
+  expect(new Set(bounds.map((bound) => bound.top)).size).toBe(1);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const headerTop = await page
+    .getByRole('banner')
+    .evaluate((header) => header.getBoundingClientRect().top);
+  expect(headerTop).toBe(0);
+});
+
+test('name entry can be cancelled without starting an attempt', async ({ page }) => {
+  await mockApi(page);
+  let playRequests = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).searchParams.get('action') === 'play') playRequests += 1;
+  });
+  await page.goto('/quiz/cinema');
+  await page.getByLabel('Имя в таблице результатов').fill('Передумал');
+  await page.getByRole('link', { name: 'Отмена', exact: true }).click();
+  await expect(page).toHaveURL('/');
+  expect(playRequests).toBe(0);
+});
+
+test('completed quiz displays the score after reload and cannot be restarted', async ({ page }) => {
+  await mockApi(page, false, [
+    {
+      quiz_id: quizId,
+      correct_count: 1,
+      answered_count: 1,
+      pending_count: 0,
+      total_count: 1,
+      completed: true,
+    },
+  ]);
+  await page.goto('/');
+  const card = page.getByRole('article').filter({ hasText: 'Кино без границ' });
+  await expect(card).toContainText('Ваш результат');
+  await expect(card).toContainText('1 / 1');
+  await expect(card.getByRole('link', { name: 'Начать игру' })).toHaveCount(0);
+  await page.reload();
+  await expect(card).toContainText('Пройден');
+  await page.goto('/quiz/cinema');
+  await expect(page.getByLabel('Имя в таблице результатов')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Смотреть результаты' })).toBeVisible();
+});
+
+test('pending and unfinished players are separate from the ranked list without scores', async ({
+  page,
+}, testInfo) => {
+  await mockApi(page);
+  await page.goto('/results');
+  const ranked = page.getByRole('region', { name: 'Итоговые результаты' });
+  await expect(ranked.getByText('Команда Альфа')).toBeVisible();
+  await expect(ranked.getByText('Команда Гамма')).toHaveCount(0);
+  const pending = page.getByRole('region', { name: 'На проверке' });
+  await expect(pending).toContainText('Команда Гамма');
+  await expect(pending).toContainText('Проверено 0 из 1');
+  await expect(page.getByRole('region', { name: 'В игре' })).toContainText('Команда Дельта');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({
+    path: `/private/tmp/quizroom-results-${testInfo.project.name}.png`,
+    fullPage: true,
+  });
+});
+
+test('quiz picker supports search, keyboard selection and Escape', async ({ page }) => {
+  await mockApi(page);
+  await page.route('**/api/quiz?action=quizzes', (route) =>
+    route.fulfill({
+      json: [
+        { id: quizId, name: 'Кино без границ', slug: 'cinema', is_active: true, question_count: 1 },
+        {
+          id: 'science-id',
+          name: 'Наука вокруг нас',
+          slug: 'science',
+          is_active: true,
+          question_count: 1,
+        },
+      ],
+    }),
+  );
+  await page.goto('/results');
+  const picker = page.getByRole('combobox', { name: 'Квиз', exact: true });
+  await picker.click();
+  await picker.fill('Наука');
+  await expect(page.getByRole('option')).toHaveCount(1);
+  await picker.press('Enter');
+  await expect(picker).toHaveValue('Наука вокруг нас');
+  await expect(picker).toHaveAttribute('aria-expanded', 'false');
+  await picker.click();
+  await picker.press('ArrowUp');
+  await picker.press('Enter');
+  await expect(picker).toHaveValue('Кино без границ');
+  await picker.click();
+  await picker.fill('нет такой темы');
+  await expect(page.getByText('Квизы не найдены')).toBeVisible();
+  await picker.press('Escape');
+  await expect(picker).toHaveValue('Кино без границ');
+});
+
+test('a completed quiz under review offers results without a new start', async ({ page }) => {
+  await mockApi(page, false, [
+    {
+      quiz_id: quizId,
+      correct_count: null,
+      answered_count: 1,
+      pending_count: 1,
+      total_count: 1,
+      completed: true,
+    },
+  ]);
+  await page.goto('/');
+  const card = page.getByRole('article');
+  await expect(card).toContainText('Ответы на проверке');
+  await expect(card.getByRole('link', { name: 'Начать игру' })).toHaveCount(0);
+  await expect(card.getByRole('link', { name: 'Смотреть результаты' })).toBeVisible();
+});
+
+test('an unfinished attempt offers continuation after reload', async ({ page }) => {
+  await mockApi(page, false, [
+    {
+      quiz_id: quizId,
+      correct_count: null,
+      answered_count: 0,
+      pending_count: 0,
+      total_count: 1,
+      completed: false,
+    },
+  ]);
+  await page.goto('/');
+  await page.reload();
+  await expect(page.getByRole('article')).toContainText('В процессе');
+  await page.getByRole('link', { name: 'Продолжить', exact: true }).click();
+  await expect(page).toHaveURL('/quiz/cinema');
+});
+
+test('long participant names fit narrow result cards', async ({ page }) => {
+  await mockApi(page, true);
+  await page.setViewportSize({ width: 320, height: 740 });
+  const longName = 'ОченьДлинноеНазваниеКомандыБезПробелов'.repeat(3);
+  await page.route('**/api/quiz?action=results&**', (route) =>
+    route.fulfill({
+      json: {
+        ranked: [
+          {
+            id: participantId,
+            name: longName,
+            correct_count: 125,
+            total_count: 150,
+            answered_count: 150,
+            pending_count: 0,
+          },
+        ],
+        pending: [{ id: 'pending', name: longName, checked_count: 50, total_count: 150 }],
+        playing: [],
+      },
+    }),
+  );
+  await page.goto('/results');
+  await expect(page.getByRole('list', { name: 'Итоговые результаты' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  const rows = page.getByRole('list', { name: 'Итоговые результаты' }).getByRole('listitem');
+  expect(await rows.first().evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
 });

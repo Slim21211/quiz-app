@@ -119,15 +119,22 @@ export function adminVersion() {
     .digest('hex');
 }
 
-export function getPlayer(request, response) {
+export function findPlayer(request) {
   const initData = request.headers['x-telegram-init-data'];
   if (initData) return validateTelegram(initData, process.env.BOT_TOKEN);
-  if (process.env.ALLOW_GUEST_PLAY !== 'true')
-    throw new HttpError(401, 'Для участия откройте квиз через Telegram-бота.');
+  if (process.env.ALLOW_GUEST_PLAY !== 'true') return null;
   const session = readSession(getCookie(request, 'quiz_player'));
   if (session?.role === 'player' && Number.isSafeInteger(session.id) && session.id < 0) {
     return { id: session.id, first_name: null, username: null };
   }
+  return null;
+}
+
+export function getPlayer(request, response) {
+  const player = findPlayer(request);
+  if (player) return player;
+  if (process.env.ALLOW_GUEST_PLAY !== 'true')
+    throw new HttpError(401, 'Для участия откройте квиз через Telegram-бота.');
   const identity = -Number.parseInt(randomBytes(6).toString('hex'), 16) - 1;
   setCookie(
     response,

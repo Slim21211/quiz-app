@@ -1,42 +1,47 @@
 import { Link } from 'react-router-dom';
-import { useGetQuizzesQuery } from '@/app/api';
+import { useGetQuizzesQuery, useGetMyProgressQuery } from '@/app/api';
 import { Feedback, errorMessage } from '@/components/Feedback';
-import { questionCountLabel } from '@/lib/text';
+import { QuizCatalogCard } from './QuizCatalogCard';
 import styles from '@/App.module.scss';
+
+const steps = [
+  { title: 'Выберите тему', description: 'Найдите квиз, который вам интересен.' },
+  { title: 'Ответьте на вопросы', description: 'На каждый ответ — 60 секунд.' },
+  { title: 'Узнайте результат', description: 'Баллы появятся после проверки.' },
+];
 
 export function QuizSelect() {
   const { data: quizzes = [], isLoading, error, refetch } = useGetQuizzesQuery();
+  const progressQuery = useGetMyProgressQuery(undefined, {
+    refetchOnMountOrArgChange: true,
+    pollingInterval: 15000,
+  });
   const available = quizzes.filter((quiz) => quiz.is_active);
   return (
     <>
-      <section className={styles.hero}>
-        <div>
-          <span className={styles.eyebrow}>Ваша следующая игра</span>
-          <h1>
-            Есть вопрос.
-            <br />
-            <span>Есть ваш ответ.</span>
-          </h1>
-          <p>
-            Выбирайте тему, включайтесь в игру и поднимайтесь в таблице результатов. На каждый
-            вопрос — одна минута.
-          </p>
+      <section className={styles.catalogIntro} aria-labelledby="catalog-title">
+        <div className={styles.sectionHeader}>
+          <div>
+            <span className={styles.eyebrow}>Тематические игры</span>
+            <h1 id="catalog-title">Выберите квиз</h1>
+          </div>
+          <span className={styles.badge}>{available.length} в каталоге</span>
         </div>
-        <div className={styles.heroStats}>
-          <strong>
-            60<span>секунд</span>
-          </strong>
-          <p>
-            Чтобы найти
-            <br />
-            свой ответ
-          </p>
-        </div>
+        <ol className={styles.steps} aria-label="Как играть">
+          {steps.map((step, index) => (
+            <li key={step.title}>
+              <span className={styles.stepNumber}>{String(index + 1).padStart(2, '0')}</span>
+              <div>
+                <h2>{step.title}</h2>
+                <p>{step.description}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
       </section>
-      <div className={styles.sectionHeader}>
-        <h2>Выберите свой квиз</h2>
-        <span className={styles.badge}>{available.length} в каталоге</span>
-      </div>
+      {progressQuery.error && (
+        <Feedback error message={errorMessage(progressQuery.error)} retry={progressQuery.refetch} />
+      )}
       {isLoading ? (
         <Feedback message="Загружаем каталог…" />
       ) : error ? (
@@ -46,37 +51,21 @@ export function QuizSelect() {
       ) : (
         <div className={styles.quizGrid}>
           {available.map((quiz, index) => (
-            <article className={styles.quizCard} key={quiz.id}>
-              <div className={styles.cardTop}>
-                <span className={styles.quizNumber}>{String(index + 1).padStart(2, '0')}</span>
-                <span className={styles.badge}>
-                  {quiz.question_count ? 'Можно играть' : 'Скоро'}
-                </span>
-              </div>
-              <h3>{quiz.name}</h3>
-              <p className={styles.muted}>
-                {questionCountLabel(quiz.question_count)} · 60 секунд на ответ
-              </p>
-              <div className={styles.cardActions}>
-                {quiz.question_count > 0 ? (
-                  <Link className={styles.primary} to={`/quiz/${quiz.slug}`}>
-                    Начать игру
-                  </Link>
-                ) : (
-                  <span className={styles.muted}>Вопросы готовятся</span>
-                )}
-                <Link className={styles.textButton} to={`/quiz/${quiz.slug}/results`}>
-                  Результаты
-                </Link>
-              </div>
-            </article>
+            <QuizCatalogCard
+              key={quiz.id}
+              quiz={quiz}
+              index={index}
+              progress={progressQuery.data?.find((attempt) => attempt.quiz_id === quiz.id)}
+              progressReady={!progressQuery.isLoading && !progressQuery.error}
+            />
           ))}
         </div>
       )}
-      <aside className={styles.tip}>
-        <span className={styles.stepNumber}>01 / 03</span>
-        <p>Выберите тему. Ответьте на вопросы. Дождитесь проверки организатора.</p>
-      </aside>
+      {!isLoading && !error && available.length > 0 && (
+        <Link className={styles.catalogResultsLink} to="/results">
+          Все результаты
+        </Link>
+      )}
     </>
   );
 }

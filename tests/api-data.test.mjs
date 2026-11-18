@@ -156,7 +156,7 @@ test('play uses the server-derived participant and ignores client score and part
   assert.equal(response.body.completed, true);
   delete process.env.ALLOW_GUEST_PLAY;
 });
-test('results contain selected public names and scores without Telegram identity fields', async (context) => {
+test('pending results expose public names without scores or Telegram identity fields', async (context) => {
   mockDatabase(context, (url, options) => {
     if (url.pathname.endsWith('/quizzes')) return jsonResponse({ id: quizId, is_active: true });
     if (url.pathname.endsWith('/questions')) {
@@ -176,14 +176,57 @@ test('results contain selected public names and scores without Telegram identity
   const response = responseMock();
   await handler(request('results'), response);
   assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    ranked: [],
+    playing: [],
+    pending: [{ id: participantId, name: 'Public name', checked_count: 2, total_count: 3 }],
+  });
+});
+
+test('personal progress is read only and restricted to the signed player identity', async (context) => {
+  process.env.ALLOW_GUEST_PLAY = 'true';
+  const cookie = `quiz_player=${signSession({ role: 'player', id: -123, expires: Date.now() + 10000 })}`;
+  mockDatabase(context, (url, options) => {
+    assert.ok(url.pathname.endsWith('/participants'));
+    assert.equal(options.method, 'GET');
+    assert.equal(url.searchParams.get('telegram_id'), 'eq.-123');
+    assert.equal(url.searchParams.get('quiz.is_active'), 'eq.true');
+    return jsonResponse([
+      {
+        quiz_id: quizId,
+        answers: [{ is_correct: true }, { is_correct: null }],
+        quiz: { questions: [{ count: 2 }] },
+      },
+    ]);
+  });
+  const response = responseMock();
+  const forged = request('my-progress', 'GET', undefined, cookie);
+  forged.query.telegram_id = '99999';
+  await handler(forged, response);
+  assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body, [
     {
-      id: participantId,
-      name: 'Public name',
-      correct_count: 1,
-      answered_count: 3,
+      quiz_id: quizId,
+      correct_count: null,
+      answered_count: 2,
       pending_count: 1,
-      total_count: 3,
+      total_count: 2,
+      completed: true,
     },
   ]);
+  assert.equal(response.headers['Set-Cookie'], undefined);
+  delete process.env.ALLOW_GUEST_PLAY;
+});
+
+test('anonymous progress lookup never registers a guest or queries participant data', async (context) => {
+  process.env.ALLOW_GUEST_PLAY = 'true';
+  mockDatabase(context, () => {
+    assert.fail('No database request should be made');
+  });
+  const response = responseMock();
+  await handler(request('my-progress'), response);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, []);
+  assert.equal(response.headers['Set-Cookie'], undefined);
+  delete process.env.ALLOW_GUEST_PLAY;
 });

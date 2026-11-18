@@ -2,7 +2,7 @@ import type { FormEvent } from 'react';
 import type { PlayState, Quiz } from '@/types';
 import { useState, useRef, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useGetQuizzesQuery } from '@/app/api';
+import { useGetQuizzesQuery, useGetMyProgressQuery } from '@/app/api';
 import { useQuizSession } from './useQuizSession';
 import { questionCountLabel } from '@/lib/text';
 import { useTimer } from '@/hooks/useTimer';
@@ -133,7 +133,6 @@ function QuizSession({ quiz }: { quiz: Quiz }) {
           <h2>Готовы к игре?</h2>
           <p className={styles.muted}>
             После старта таймер не останавливается. При повторном входе вы продолжите свою попытку.
-            Для участия через браузер организатор должен разрешить гостевой режим.
           </p>
           <form
             className={styles.stack}
@@ -155,9 +154,14 @@ function QuizSession({ quiz }: { quiz: Quiz }) {
               <small>Это имя будет видно всем участникам.</small>
             </label>
             {actionError && <Feedback error message={actionError} />}
-            <button className={styles.primary} disabled={isLoading || !quiz.question_count}>
-              {isLoading ? 'Готовим игру…' : 'Начать или продолжить'}
-            </button>
+            <div className={styles.introActions}>
+              <button className={styles.primary} disabled={isLoading || !quiz.question_count}>
+                {isLoading ? 'Готовим игру…' : 'Начать или продолжить'}
+              </button>
+              <Link className={styles.secondary} to="/">
+                Отмена
+              </Link>
+            </div>
           </form>
         </section>
       )}
@@ -169,11 +173,40 @@ export function QuizPlay() {
   const { slug } = useParams<{ slug: string }>();
   const { data: quizzes = [], isLoading, error, refetch } = useGetQuizzesQuery();
   const quiz = quizzes.find((item) => item.slug === slug && item.is_active);
-  if (isLoading) return <Feedback message="Загружаем квиз…" />;
+  const progressQuery = useGetMyProgressQuery(undefined, { refetchOnMountOrArgChange: true });
+  const progress = progressQuery.data?.find((attempt) => attempt.quiz_id === quiz?.id);
+  if (isLoading || progressQuery.isLoading) return <Feedback message="Загружаем квиз…" />;
   if (error) return <Feedback error message={errorMessage(error)} retry={refetch} />;
   if (!quiz)
     return (
       <Feedback message="Квиз не найден или ещё не опубликован. Выберите другую игру в каталоге." />
+    );
+  if (progressQuery.error)
+    return (
+      <Feedback error message={errorMessage(progressQuery.error)} retry={progressQuery.refetch} />
+    );
+  if (progress?.completed)
+    return (
+      <section className={`${styles.panel} ${styles.completion}`}>
+        <span className={styles.eyebrow}>Квиз пройден</span>
+        <h1>{quiz.name}</h1>
+        {progress.correct_count === null ? (
+          <p>Ваши ответы сохранены и ожидают проверки.</p>
+        ) : (
+          <p className={styles.completionScore}>
+            {progress.correct_count}
+            <span> / {progress.total_count}</span>
+          </p>
+        )}
+        <div className={styles.actions}>
+          <Link className={styles.primary} to={`/quiz/${quiz.slug}/results`}>
+            Смотреть результаты
+          </Link>
+          <Link className={styles.secondary} to="/">
+            К каталогу
+          </Link>
+        </div>
+      </section>
     );
   return <QuizSession key={quiz.id} quiz={quiz} />;
 }

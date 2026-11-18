@@ -38,6 +38,21 @@ export interface ParticipantResult {
   total_count: number;
 }
 
+export interface QuizResults {
+  ranked: ParticipantResult[];
+  pending: { id: string; name: string; checked_count: number; total_count: number }[];
+  playing: { id: string; name: string; answered_count: number; total_count: number }[];
+}
+
+export interface QuizProgress {
+  quiz_id: string;
+  correct_count: number | null;
+  answered_count: number;
+  pending_count: number;
+  total_count: number;
+  completed: boolean;
+}
+
 export interface PlayState {
   question: { id: string; question_text: string; order_number: number } | null;
   deadline: string | null;

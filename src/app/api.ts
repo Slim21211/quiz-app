@@ -1,5 +1,12 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
-import type { Quiz, Question, ParticipantWithAnswers, ParticipantResult, PlayState } from '@/types';
+import type {
+  Quiz,
+  Question,
+  ParticipantWithAnswers,
+  QuizResults,
+  QuizProgress,
+  PlayState,
+} from '@/types';
 
 export const api = createApi({
   reducerPath: 'api',
@@ -11,7 +18,7 @@ export const api = createApi({
       return headers;
     },
   }),
-  tagTypes: ['Quiz', 'Question', 'Answer', 'Session'],
+  tagTypes: ['Quiz', 'Question', 'Answer', 'Session', 'Progress'],
   endpoints: (builder) => ({
     getSession: builder.query<{ admin: boolean }, void>({
       query: () => '?action=session',
@@ -36,6 +43,10 @@ export const api = createApi({
     getQuizzes: builder.query<Quiz[], void>({
       query: () => '?action=quizzes',
       providesTags: ['Quiz', 'Session'],
+    }),
+    getMyProgress: builder.query<QuizProgress[], void>({
+      query: () => '?action=my-progress',
+      providesTags: ['Progress'],
     }),
     createQuiz: builder.mutation<Quiz, { name: string; slug: string }>({
       query: (body) => ({ url: '?action=quiz', method: 'POST', body }),
@@ -73,9 +84,9 @@ export const api = createApi({
     }),
     checkAnswer: builder.mutation<void, { id: string; is_correct: boolean | null }>({
       query: (body) => ({ url: '?action=review', method: 'PATCH', body }),
-      invalidatesTags: ['Answer'],
+      invalidatesTags: ['Answer', 'Progress'],
     }),
-    getResults: builder.query<ParticipantResult[], string>({
+    getResults: builder.query<QuizResults, string>({
       query: (quizId) => `?action=results&quizId=${encodeURIComponent(quizId)}`,
       providesTags: ['Answer'],
     }),
@@ -84,7 +95,7 @@ export const api = createApi({
       { quiz_id: string; name?: string; question_id?: string; answer_text?: string }
     >({
       query: (body) => ({ url: '?action=play', method: 'POST', body }),
-      invalidatesTags: ['Answer'],
+      invalidatesTags: ['Answer', 'Progress'],
     }),
   }),
 });
@@ -94,6 +105,7 @@ export const {
   useLoginMutation,
   useLogoutMutation,
   useGetQuizzesQuery,
+  useGetMyProgressQuery,
   useCreateQuizMutation,
   useUpdateQuizMutation,
   useGetQuestionsQuery,

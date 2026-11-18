@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { groupResults, summarizeAnswers } from '../server/results.js';
 import { createClient } from '@supabase/supabase-js';
 import {
   HttpError,
@@ -9,6 +10,7 @@ import {
   isAdmin,
   adminVersion,
   getPlayer,
+  findPlayer,
   requireSameOrigin,
   textField,
   uuidField,
@@ -87,6 +89,7 @@ const methods = {
   login: ['POST'],
   logout: ['POST'],
   quizzes: ['GET'],
+  'my-progress': ['GET'],
   quiz: ['POST', 'PATCH'],
   questions: ['GET'],
   question: ['POST', 'PATCH', 'DELETE'],
@@ -266,16 +269,33 @@ export default async function handler(request, response) {
         .select('id', { count: 'exact', head: true })
         .eq('quiz_id', quizId);
       checked(countResult);
-      const results = participants.map((participant) => ({
-        id: participant.id,
-        name: participant.participant_number || 'Участник',
-        correct_count: participant.answers.filter((answer) => answer.is_correct === true).length,
-        answered_count: participant.answers.length,
-        pending_count: participant.answers.filter((answer) => answer.is_correct === null).length,
-        total_count: countResult.count || 0,
-      }));
-      results.sort((left, right) => right.correct_count - left.correct_count);
-      return response.json(results);
+      return response.json(groupResults(participants, countResult.count || 0));
+    }
+    if (action === 'my-progress') {
+      const player = findPlayer(request);
+      if (!player) return response.json([]);
+      const participants = await readRows(
+        supabase
+          .from('participants')
+          .select('quiz_id, answers(is_correct), quiz:quizzes!inner(is_active, questions(count))')
+          .eq('telegram_id', player.id)
+          .eq('quiz.is_active', true)
+          .order('id'),
+      );
+      return response.json(
+        participants.map((participant) => {
+          const summary = summarizeAnswers(
+            participant.answers,
+            participant.quiz.questions[0]?.count || 0,
+          );
+          return {
+            quiz_id: participant.quiz_id,
+            ...summary,
+            correct_count:
+              summary.completed && summary.pending_count === 0 ? summary.correct_count : null,
+          };
+        }),
+      );
     }
     if (action === 'play') {
       const player = getPlayer(request, response);

@@ -7,6 +7,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "secrets:generate": "node scripts/generate-secrets.mjs",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json",
     "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test tests/*.test.mjs",
     "format": "prettier --write src api server scripts tests vite.config.ts playwright.config.ts",
