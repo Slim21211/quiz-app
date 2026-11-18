@@ -1,6 +1,6 @@
 # Quizroom
 
-Каталог тематических квизов с Telegram Mini App, редактором вопросов и отдельной таблицей результатов для каждой игры. React 18, TypeScript, Redux Toolkit Query, SCSS Modules, Vite, Supabase/PostgreSQL и Telegraf. Фронтенд размещается на GitHub Pages (`https://quiz.elvada.ru`), две серверные функции остаются на Vercel (`https://api.quiz.elvada.ru`).
+Каталог тематических квизов с Telegram Mini App, редактором вопросов и отдельной таблицей результатов для каждой игры. React 18, TypeScript, Redux Toolkit Query, SCSS Modules, Vite, Supabase/PostgreSQL и Telegraf. Фронтенд размещается на GitHub Pages (`https://quiz.elvada.ru`), API — в Supabase Edge Functions, Telegram-бот остаётся на Vercel. Браузеру для работы с квизами не требуется доступ к Vercel.
 
 ## Возможности
 
@@ -182,13 +182,13 @@ tests/                  Проверки безопасности, API, SQL и �
 
 CNAME `quiz.elvada.ru → slim21211.github.io` направляет домен на GitHub. Дополнительно домен нужно назначить в Settings → Pages репозитория и включить HTTPS после выпуска сертификата. Публикация приватного репозитория через Pages требует подходящего платного тарифа GitHub; для бесплатного варианта нужен публичный репозиторий. Изменение видимости согласовывается отдельно.
 
-Workflow `.github/workflows/pages.yml` собирает фронтенд и публикует только `dist` при пуше в `main`. Серверные файлы, `.env`, ключ Supabase и токен бота в артефакт не включаются. `VITE_API_BASE_URL` задаёт публичный origin API; workflow читает одноимённую Repository Variable и использует `https://api.quiz.elvada.ru` по умолчанию. До проверки этого серверного адреса перенос рабочих URL выполнять нельзя.
+Workflow `.github/workflows/pages.yml` собирает фронтенд и публикует только `dist` при пуше в `main`. Серверные файлы, `.env`, ключ Supabase и токен бота в артефакт не включаются. `VITE_API_BASE_URL` задаёт публичный origin API или полный адрес Edge Function; workflow читает одноимённую Repository Variable и использует `https://ogukefkahldboykxuccm.supabase.co/functions/v1/quiz` по умолчанию. Перед переключением переменной требуется опубликовать и проверить функцию.
 
 Для раздельной схемы:
 
 | Настройка | Где | Значение |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | GitHub → Settings → Secrets and variables → Actions → Variables | Доступный пользователям HTTPS-origin сервера, например `https://api.quiz.elvada.ru`; без `/api` |
+| `VITE_API_BASE_URL` | GitHub → Settings → Secrets and variables → Actions → Variables | HTTPS-origin сервера, например `https://api.quiz.elvada.ru`, или полный адрес Supabase `https://ogukefkahldboykxuccm.supabase.co/functions/v1/quiz` |
 | `WEB_APP_URL` | Vercel | `https://quiz.elvada.ru` после готовности нового сайта и API |
 | `API_BASE_URL` | Серверное окружение и локальный запуск `webhook:check/setup` | Origin сервера бота, например `https://api.quiz.elvada.ru`; при отсутствии сохраняется прежний `WEB_APP_URL` |
 | `ADDITIONAL_WEB_APP_ORIGINS` | Vercel, необязательно | Точные дополнительные origins через запятую для переходного периода, например прежний адрес фронтенда на Vercel |
@@ -208,3 +208,36 @@ BrowserRouter сохраняет обычные маршруты `/quiz/:slug`. 
 5. Настроить webhook на отдельный серверный адрес при необходимости. Перенос фронтенда сам по себе не требует менять рабочую регистрацию Telegram.
 
 Если проблема затрагивает IP-сеть Vercel, переносить потребуется и браузерный API на доступный сервер или Supabase Edge Functions. Сам бот можно оставить на Vercel: webhook вызывают серверы Telegram. Новые серверные origins, DNS, видимость репозитория и публикация изменяются только после согласования.
+
+## API в Supabase Edge Functions
+
+Функция `quiz`: `supabase/functions/quiz/index.ts` подключает общий обработчик `api/quiz.js` через адаптер `server/edge.js`. Код игры, проверка подписи Telegram, ограничения доступа к правильным ответам, серверный таймер и SQL-функции остаются общими с Vercel. Для переноса API изменение схемы базы не требуется; `supabase-schema.sql` повторно выполнять не нужно.
+
+`supabase/config.toml` отключает проверку Supabase JWT на шлюзе только для этой функции: каталог доступен без входа, а Telegram `initData` и подписанные сессии проверяет само приложение. Это не даёт анонимным пользователям прямого доступа к таблицам. Серверный ключ остаётся внутри Edge Function.
+
+Подготовка и согласованная публикация через CLI:
+
+```sh
+npx supabase login
+npm run supabase:check
+npm run supabase:deploy
+```
+
+`supabase:check` проверяет конфигурацию без удалённых изменений. `supabase:deploy` устанавливает четыре секрета (`WEB_APP_URL`, `SESSION_SECRET`, `ADMIN_PASSWORD`, `BOT_TOKEN`) и публикует только функцию `quiz` через API, без Docker. Адрес проекта берётся из локального `SUPABASE_URL`; секреты читаются из окружения или существующего `.env`, передаются CLI через stdin и не выводятся в логи или аргументы процесса. Скрипт использует совместимую CLI `2.54.11` через `npx`; CLI 3.2.0 перехватывает `--env-file` при запуске Node. Для уже установленного исполняемого файла можно задать `SUPABASE_CLI_BINARY`. На macOS stdin передаётся через системный pipe без записи секретов на диск. `WEB_APP_URL` для функции устанавливается в `https://quiz.elvada.ru`. `SUPABASE_URL` и `SUPABASE_SERVICE_ROLE_KEY` предоставляет среда Edge Functions, повторно устанавливать их не нужно. Гостевая игра по умолчанию выключена.
+
+После проверки функции задайте GitHub Repository Variable `VITE_API_BASE_URL=https://ogukefkahldboykxuccm.supabase.co/functions/v1/quiz` и запустите новую сборку Pages. Токены бота, пароль администратора и серверные ключи в GitHub переносить не нужно. Main Mini App в BotFather сохраняет адрес `https://quiz.elvada.ru/`. Бот и его рабочий webhook остаются на Vercel.
+
+Фронтенд на `elvada.ru` и функция на `supabase.co` относятся к разным сайтам. Чтобы не зависеть от блокировки сторонних cookies, функция возвращает подписанные сессии в заголовках `X-Quiz-Admin-Session` и `X-Quiz-Player-Session`. Администраторская сессия хранится в `sessionStorage` текущей вкладки, действует максимум восемь часов и удаляется при выходе. Пароль в браузерное хранилище не сохраняется. При блокировке хранилища вход работает в памяти до перезагрузки. Опциональная гостевая сессия хранится в `localStorage` до серверного срока истечения. Данные Telegram по-прежнему передаются через `X-Telegram-Init-Data`. Для Vercel сохраняется прежняя HttpOnly cookie-схема.
+
+Подписанная администраторская сессия в `sessionStorage` доступна JavaScript приложения, поэтому XSS остаётся риском: нельзя вставлять непроверенный HTML или подключать недоверенные скрипты. Сессии привязаны в хранилище к конкретному URL API. После переноса администратору потребуется войти заново; Telegram-участники сохранят прежние попытки, поскольку идентифицируются по проверенному Telegram ID.
+
+В Edge Function лимит игровых запросов привязан к проверенному ID игрока, а лимит входа администратора общий: десять попыток за пятнадцать минут. Произвольные `X-Forwarded-For` не считаются доверенными. Ошибки входа разных клиентов суммируются, поэтому общий лимит может временно закрыть вход организатору.
+
+Проверки нового транспорта:
+
+```sh
+npm run test:edge
+npx deno check --config supabase/functions/quiz/deno.json supabase/functions/quiz/index.ts
+```
+
+После переноса любые изменения серверной логики требуют повторного `npm run supabase:deploy`; workflow Pages публикует только фронтенд. Старый API Vercel можно временно сохранить для отката. Для самого бота нужны только `BOT_TOKEN`, `WEB_APP_URL` и `TELEGRAM_WEBHOOK_SECRET`; удалять остальные серверные переменные следует лишь после отключения старого API.

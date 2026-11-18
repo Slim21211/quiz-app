@@ -1,0 +1,8 @@
+project_id = "quiz-app"
+
+[functions.quiz]
+enabled = true
+# Public reads and Telegram sessions use the application's own authentication.
+verify_jwt = false
+entrypoint = "./functions/quiz/index.ts"
+import_map = "./functions/quiz/deno.json"

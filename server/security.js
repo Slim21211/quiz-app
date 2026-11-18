@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import process from 'node:process';
 
 export class HttpError extends Error {
   constructor(status, message) {
@@ -103,8 +105,28 @@ export function setCookie(response, name, value, maxAge) {
   );
 }
 
+const sessionHeaders = {
+  quiz_admin: 'X-Quiz-Admin-Session',
+  quiz_player: 'X-Quiz-Player-Session',
+};
+
+function getSessionValue(request, name) {
+  if (request.sessionTransport === 'header') {
+    return request.headers[sessionHeaders[name].toLowerCase()];
+  }
+  return getCookie(request, name);
+}
+
+export function setSession(request, response, name, value, maxAge) {
+  if (request.sessionTransport === 'header') {
+    response.setHeader(sessionHeaders[name], value);
+    return;
+  }
+  setCookie(response, name, value, maxAge);
+}
+
 export function isAdmin(request) {
-  const session = readSession(getCookie(request, 'quiz_admin'));
+  const session = readSession(getSessionValue(request, 'quiz_admin'));
   return (
     session?.role === 'admin' &&
     !!process.env.ADMIN_PASSWORD &&
@@ -123,7 +145,7 @@ export function findPlayer(request) {
   const initData = request.headers['x-telegram-init-data'];
   if (initData) return validateTelegram(initData, process.env.BOT_TOKEN);
   if (process.env.ALLOW_GUEST_PLAY !== 'true') return null;
-  const session = readSession(getCookie(request, 'quiz_player'));
+  const session = readSession(getSessionValue(request, 'quiz_player'));
   if (session?.role === 'player' && Number.isSafeInteger(session.id) && session.id < 0) {
     return { id: session.id, first_name: null, username: null };
   }
@@ -136,7 +158,8 @@ export function getPlayer(request, response) {
   if (process.env.ALLOW_GUEST_PLAY !== 'true')
     throw new HttpError(401, 'Для участия откройте квиз через Telegram-бота.');
   const identity = -Number.parseInt(randomBytes(6).toString('hex'), 16) - 1;
-  setCookie(
+  setSession(
+    request,
     response,
     'quiz_player',
     signSession({ role: 'player', id: identity, expires: Date.now() + 30 * 86400000 }),

@@ -8,9 +8,9 @@ export function getApiBaseUrl(configured?: string): string {
     url.password ||
     url.search ||
     url.hash ||
-    url.pathname !== '/'
+    !['/', '/api/quiz', '/functions/v1/quiz'].includes(url.pathname)
   ) {
-    throw new Error('VITE_API_BASE_URL must be an HTTPS server origin.');
+    throw new Error('VITE_API_BASE_URL must be an HTTPS server origin or quiz endpoint.');
   }
-  return `${url.origin}/api/quiz`;
+  return url.pathname === '/' ? `${url.origin}/api/quiz` : `${url.origin}${url.pathname}`;
 }

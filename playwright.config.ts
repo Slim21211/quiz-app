@@ -1,8 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const edgeTests = process.env.QUIZ_EDGE_TEST === 'true';
+
 export default defineConfig({
   testDir: './tests',
-  testMatch: '**/*.spec.ts',
+  testMatch: edgeTests ? '**/edge-ui.spec.ts' : '**/ui.spec.ts',
   fullyParallel: false,
   workers: 1,
   reporter: 'list',
@@ -22,6 +24,9 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev',
     url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !process.env.CI && !edgeTests,
+    env: edgeTests
+      ? { VITE_API_BASE_URL: 'https://edge.example.test/functions/v1/quiz' }
+      : undefined,
   },
 });

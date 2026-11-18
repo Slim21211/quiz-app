@@ -1,7 +1,12 @@
 import { HttpError, isAllowedOrigin } from './security.js';
 
 const allowedMethods = ['GET', 'POST', 'PATCH', 'DELETE'];
-const allowedHeaders = ['content-type', 'x-telegram-init-data'];
+const allowedHeaders = [
+  'content-type',
+  'x-telegram-init-data',
+  'x-quiz-admin-session',
+  'x-quiz-player-session',
+];
 
 export function handleCors(request, response) {
   response.setHeader('Vary', 'Origin');
@@ -10,6 +15,10 @@ export function handleCors(request, response) {
     if (!isAllowedOrigin(origin)) throw new HttpError(403, 'Недопустимый источник запроса.');
     response.setHeader('Access-Control-Allow-Origin', origin);
     response.setHeader('Access-Control-Allow-Credentials', 'true');
+    response.setHeader(
+      'Access-Control-Expose-Headers',
+      'X-Quiz-Admin-Session, X-Quiz-Player-Session',
+    );
   }
   if (request.method !== 'OPTIONS') return false;
   if (!origin) throw new HttpError(403, 'Отсутствует Origin запроса.');
@@ -25,7 +34,7 @@ export function handleCors(request, response) {
     throw new HttpError(403, 'Недопустимые заголовки запроса.');
   }
   response.setHeader('Access-Control-Allow-Methods', allowedMethods.join(', '));
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Telegram-Init-Data');
+  response.setHeader('Access-Control-Allow-Headers', allowedHeaders.join(', '));
   response.setHeader('Access-Control-Max-Age', '600');
   response.status(204).end();
   return true;

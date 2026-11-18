@@ -1,5 +1,4 @@
-import { getApiBaseUrl } from '@/lib/apiUrl';
-import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query/react';
 import type {
   Quiz,
   Question,
@@ -8,18 +7,36 @@ import type {
   QuizProgress,
   PlayState,
 } from '@/types';
+import { getApiBaseUrl } from '@/lib/apiUrl';
+import { createApiSessions, usesHeaderSessions } from '@/lib/apiSession';
+import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+
+const endpoint = getApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const headerSessions = usesHeaderSessions(endpoint);
+const sessions = createApiSessions(endpoint);
+const transportQuery = fetchBaseQuery({
+  baseUrl: endpoint,
+  credentials: headerSessions ? 'omit' : 'include',
+  prepareHeaders: (headers) => {
+    const initData = window.Telegram?.WebApp.initData;
+    if (initData) headers.set('X-Telegram-Init-Data', initData);
+    if (headerSessions) sessions.prepare(headers);
+    return headers;
+  },
+});
+const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (
+  argumentsValue,
+  context,
+  extraOptions,
+) => {
+  const result = await transportQuery(argumentsValue, context, extraOptions);
+  if (headerSessions && result.meta?.response) sessions.capture(result.meta.response.headers);
+  return result;
+};
 
 export const api = createApi({
   reducerPath: 'api',
-  baseQuery: fetchBaseQuery({
-    baseUrl: getApiBaseUrl(import.meta.env.VITE_API_BASE_URL),
-    credentials: 'include',
-    prepareHeaders: (headers) => {
-      const initData = window.Telegram?.WebApp.initData;
-      if (initData) headers.set('X-Telegram-Init-Data', initData);
-      return headers;
-    },
-  }),
+  baseQuery,
   tagTypes: ['Quiz', 'Question', 'Answer', 'Session', 'Progress'],
   endpoints: (builder) => ({
     getSession: builder.query<{ admin: boolean }, void>({

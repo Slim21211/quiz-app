@@ -40,3 +40,7 @@ coverage/
 # Browser verification
 test-results/
 playwright-report/
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/

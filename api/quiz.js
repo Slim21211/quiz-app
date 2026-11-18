@@ -1,5 +1,7 @@
 import { handleCors } from '../server/cors.js';
 import { createHmac } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import process from 'node:process';
 import { groupResults, summarizeAnswers, findUnansweredShownQuestion } from '../server/results.js';
 import { createClient } from '@supabase/supabase-js';
 import {
@@ -7,7 +9,7 @@ import {
   sessionSecret,
   equalSecrets,
   signSession,
-  setCookie,
+  setSession,
   isAdmin,
   adminVersion,
   getPlayer,
@@ -61,14 +63,18 @@ function requireAdmin(request) {
   if (!isAdmin(request)) throw new HttpError(401, 'Войдите как администратор.');
 }
 
-async function rateLimit(request, response, category, limit, windowSeconds) {
+async function rateLimit(request, response, category, limit, windowSeconds, playerId) {
   // Vercel overwrites x-forwarded-for at its edge. Local requests use the socket.
   const address =
-    process.env.VERCEL === '1'
-      ? String(request.headers['x-forwarded-for'] || '')
-          .split(',')[0]
-          .trim()
-      : request.socket?.remoteAddress || 'local';
+    request.runtime === 'supabase'
+      ? playerId === undefined
+        ? 'shared'
+        : `player:${playerId}`
+      : process.env.VERCEL === '1'
+        ? String(request.headers['x-forwarded-for'] || '')
+            .split(',')[0]
+            .trim()
+        : request.socket?.remoteAddress || 'local';
   const fingerprint = createHmac('sha256', sessionSecret())
     .update(`${category}:${address}`)
     .digest('hex');
@@ -126,7 +132,8 @@ export default async function handler(request, response) {
       const password = textField(body.password, 'Пароль', 256);
       if (!equalSecrets(password, process.env.ADMIN_PASSWORD))
         throw new HttpError(401, 'Неверный пароль.');
-      setCookie(
+      setSession(
+        request,
         response,
         'quiz_admin',
         signSession({ role: 'admin', version: adminVersion(), expires: Date.now() + 8 * 3600000 }),
@@ -135,7 +142,7 @@ export default async function handler(request, response) {
       return response.json({ admin: true });
     }
     if (action === 'logout') {
-      setCookie(response, 'quiz_admin', '', 0);
+      setSession(request, response, 'quiz_admin', '', 0);
       return response.json({ success: true });
     }
     if (['quiz', 'questions', 'question', 'review'].includes(action)) requireAdmin(request);
@@ -309,7 +316,7 @@ export default async function handler(request, response) {
     if (action === 'abandon') {
       const player = findPlayer(request);
       if (!player) throw new HttpError(401, 'Сессия участника не найдена.');
-      await rateLimit(request, response, 'play', 300, 60);
+      await rateLimit(request, response, 'play', 300, 60, player.id);
       const quizId = uuidField(body.quiz_id);
       const questionId = uuidField(body.question_id);
       const participant = checked(
@@ -346,7 +353,7 @@ export default async function handler(request, response) {
     }
     if (action === 'play') {
       const player = getPlayer(request, response);
-      await rateLimit(request, response, 'play', 300, 60);
+      await rateLimit(request, response, 'play', 300, 60, player.id);
       const quizId = uuidField(body.quiz_id);
       const quiz = checked(
         await supabase

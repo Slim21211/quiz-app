@@ -13,6 +13,9 @@
     "format": "prettier --write src api server scripts tests vite.config.ts playwright.config.ts",
     "format:check": "prettier --check src api server scripts tests vite.config.ts playwright.config.ts",
     "test:ui": "playwright test",
+    "test:edge": "QUIZ_EDGE_TEST=true playwright test",
+    "supabase:check": "node scripts/deploy-supabase.mjs",
+    "supabase:deploy": "node scripts/deploy-supabase.mjs --apply",
     "webhook:check": "node scripts/configure-webhook.mjs",
     "webhook:setup": "node scripts/configure-webhook.mjs --apply"
   },
