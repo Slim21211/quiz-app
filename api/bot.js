@@ -18,7 +18,7 @@ function getBot() {
           [
             privateChat
               ? { text: 'Выбрать квиз', web_app: { url: new URL('/', appUrl).href } }
-              : { text: 'Выбрать квиз', url: `https://t.me/${username}?start=quiz` },
+              : { text: 'Выбрать квиз', url: `https://t.me/${username}?startapp` },
           ],
         ],
       },
