@@ -12,7 +12,9 @@
     "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test tests/*.test.mjs",
     "format": "prettier --write src api server scripts tests vite.config.ts playwright.config.ts",
     "format:check": "prettier --check src api server scripts tests vite.config.ts playwright.config.ts",
-    "test:ui": "playwright test"
+    "test:ui": "playwright test",
+    "webhook:check": "node scripts/configure-webhook.mjs",
+    "webhook:setup": "node scripts/configure-webhook.mjs --apply"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.0.1",
