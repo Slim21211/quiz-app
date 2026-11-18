@@ -36,3 +36,13 @@ export function groupResults(participants, totalCount) {
   ranked.sort((left, right) => right.correct_count - left.correct_count);
   return { ranked, pending, playing };
 }
+
+export function findUnansweredShownQuestion(shownQuestions, answers) {
+  const answeredIds = new Set(answers.map((answer) => answer.question_id));
+  return (
+    [...shownQuestions]
+      .filter((shown) => shown.question_id && !answeredIds.has(shown.question_id))
+      .sort((left, right) => left.question.order_number - right.question.order_number)[0]
+      ?.question_id || null
+  );
+}

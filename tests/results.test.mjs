@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupResults } from '../server/results.js';
+import { groupResults, findUnansweredShownQuestion } from '../server/results.js';
 
 function participant(identity, verdicts) {
   return {
@@ -42,4 +42,15 @@ test('unstarted and empty quizzes never produce final results', () => {
   assert.equal(groupResults([participant('unstarted', [])], 3).ranked.length, 0);
   assert.equal(groupResults([participant('empty', [])], 0).ranked.length, 0);
   assert.deepEqual(groupResults([], 3), { ranked: [], pending: [], playing: [] });
+});
+
+test('resume skips only the earliest unanswered shown question', () => {
+  const shown = [
+    { question_id: 'third', question: { order_number: 3 } },
+    { question_id: 'first', question: { order_number: 1 } },
+    { question_id: 'second', question: { order_number: 2 } },
+  ];
+  assert.equal(findUnansweredShownQuestion(shown, [{ question_id: 'first' }]), 'second');
+  assert.equal(findUnansweredShownQuestion(shown, shown), null);
+  assert.equal(findUnansweredShownQuestion([], []), null);
 });

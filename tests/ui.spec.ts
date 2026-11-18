@@ -56,6 +56,7 @@ async function mockApi(
     const payload: unknown = request.postDataJSON();
     let response: unknown;
     if (action === 'my-progress') response = progress;
+    else if (action === 'abandon') response = { success: true };
     else if (action === 'session') response = { admin };
     else if (action === 'login') {
       admin = true;
@@ -490,12 +491,13 @@ test('route changes and browser history always scroll to the page top', async ({
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
 });
 
-test('resume opens the next unanswered question with the existing deadline and no name prompt', async ({
+test('resume identifies the abandoned question without requesting the name again', async ({
   page,
 }) => {
   await mockApi(page, false, [
     {
       quiz_id: quizId,
+      resume_question_id: questionId,
       answered_count: 1,
       total_count: 3,
       pending_count: 1,
@@ -512,6 +514,12 @@ test('resume opens the next unanswered question with the existing deadline and n
         payload.resume_only === true,
     ).toBe(true);
     expect(typeof payload === 'object' && payload !== null && 'name' in payload).toBe(false);
+    expect(
+      typeof payload === 'object' &&
+        payload !== null &&
+        'resume_question_id' in payload &&
+        payload.resume_question_id === questionId,
+    ).toBe(true);
     await route.fulfill({
       json: {
         question: {
@@ -557,4 +565,77 @@ test('failed resume offers retry without displaying the registration form', asyn
   await page.unroute('**/api/quiz?action=play');
   await page.getByRole('button', { name: 'Повторить' }).click();
   await expect(page.getByRole('heading', { name: 'Кто снял фильм «Сталкер»?' })).toBeVisible();
+});
+
+test('hiding the page forfeits the current question without starting another in the background', async ({
+  page,
+}) => {
+  await mockApi(page);
+  let forfeits = 0;
+  let turns = 0;
+  page.on('request', (request) => {
+    const action = new URL(request.url()).searchParams.get('action');
+    if (action === 'abandon') forfeits += 1;
+    if (action === 'play') turns += 1;
+  });
+  await page.goto('/quiz/cinema');
+  await page.getByLabel('Имя в таблице результатов').fill('Test player');
+  await page.getByRole('button', { name: 'Начать игру', exact: true }).click();
+  await expect(page.getByLabel('Ваш ответ')).toBeVisible();
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(page.getByRole('heading', { name: 'Вопрос пропущен' })).toBeVisible();
+  await expect(page.getByLabel('Ваш ответ')).toHaveCount(0);
+  await expect.poll(() => forfeits).toBe(1);
+  expect(turns).toBe(1);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(page.getByRole('heading', { name: 'Вопрос пропущен' })).toBeVisible();
+  await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Смотреть результаты' })).toBeVisible();
+  expect(turns).toBe(2);
+});
+
+test('leaving the quiz route closes the question while StrictMode does not', async ({ page }) => {
+  await mockApi(page);
+  let forfeits = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).searchParams.get('action') === 'abandon') forfeits += 1;
+  });
+  await page.goto('/quiz/cinema');
+  await page.getByLabel('Имя в таблице результатов').fill('Test player');
+  await page.getByRole('button', { name: 'Начать игру', exact: true }).click();
+  await expect(page.getByLabel('Ваш ответ')).toBeVisible();
+  expect(forfeits).toBe(0);
+  await page
+    .getByRole('navigation', { name: 'Главная навигация' })
+    .getByRole('link', { name: 'Квизы', exact: true })
+    .click();
+  await expect.poll(() => forfeits).toBe(1);
+});
+
+test('Telegram deactivation closes the displayed question', async ({ page }) => {
+  await mockApi(page);
+  await page.addInitScript(() => {
+    window.Telegram = {
+      WebApp: {
+        initData: '',
+        ready: () => {},
+        expand: () => {},
+        onEvent: (event, callback) => window.addEventListener(`telegram-${event}`, callback),
+        offEvent: (event, callback) => window.removeEventListener(`telegram-${event}`, callback),
+      },
+    };
+  });
+  await page.goto('/quiz/cinema');
+  await page.getByLabel('Имя в таблице результатов').fill('Test player');
+  await page.getByRole('button', { name: 'Начать игру', exact: true }).click();
+  await expect(page.getByLabel('Ваш ответ')).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event('telegram-deactivated')));
+  await expect(page.getByRole('heading', { name: 'Вопрос пропущен' })).toBeVisible();
+  await expect(page.getByLabel('Ваш ответ')).toHaveCount(0);
 });

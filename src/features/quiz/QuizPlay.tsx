@@ -5,40 +5,70 @@ import { Link, useParams } from 'react-router-dom';
 import { useGetQuizzesQuery, useGetMyProgressQuery } from '@/app/api';
 import { useQuizSession } from './useQuizSession';
 import { questionCountLabel } from '@/lib/text';
+import { useQuestionExit } from '@/hooks/useQuestionExit';
 import { useTimer } from '@/hooks/useTimer';
 import { Feedback, errorMessage } from '@/components/Feedback';
 import styles from '@/App.module.scss';
 
 function QuestionTurn({
   state,
+  quizId,
   busy,
   error,
   onAnswer,
 }: {
   state: PlayState;
+  quizId: string;
   busy: boolean;
   error: string;
   onAnswer: (answer: string) => Promise<void>;
 }) {
   const [answer, setAnswer] = useState('');
   const submitted = useRef(false);
+  const forfeited = useQuestionExit(quizId, state.question?.id || '', submitted);
   const answerInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     answerInput.current?.focus({ preventScroll: true });
   }, []);
   const seconds = useTimer(state.deadline || state.server_time, state.server_time);
   useEffect(() => {
-    if (seconds === 0 && !busy && !submitted.current) {
+    if (!forfeited && seconds === 0 && !busy && !submitted.current) {
       submitted.current = true;
       void onAnswer('');
     }
-  }, [seconds, busy, onAnswer]);
+  }, [seconds, busy, onAnswer, forfeited]);
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (busy || (seconds > 0 && !answer.trim())) return;
     submitted.current = true;
     await onAnswer(seconds > 0 ? answer : '');
   }
+  if (forfeited)
+    return (
+      <section className={styles.playCard}>
+        <span className={styles.eyebrow}>Время на ответ — 0 секунд</span>
+        <h2 className={styles.questionTitle}>Вопрос пропущен</h2>
+        <p className={styles.muted}>
+          Вы вышли из квиза или свернули приложение. Вернуться к этому вопросу нельзя.
+        </p>
+        {error && <Feedback error message={error} />}
+        <div className={styles.actions}>
+          <button
+            className={styles.primary}
+            disabled={busy}
+            onClick={() => {
+              submitted.current = true;
+              void onAnswer('');
+            }}
+          >
+            {busy ? 'Продолжаем…' : 'Продолжить'}
+          </button>
+          <Link className={styles.secondary} to="/">
+            К каталогу
+          </Link>
+        </div>
+      </section>
+    );
   return (
     <section className={styles.playCard}>
       <div className={styles.sectionHeader}>
@@ -90,15 +120,26 @@ function QuestionTurn({
           {busy ? 'Сохраняем…' : seconds === 0 ? 'Повторить сохранение' : 'Отправить ответ'}
         </button>
       </form>
-      <p className={styles.muted}>Отправленный ответ нельзя изменить. Проверка — после игры.</p>
+      <p className={styles.muted}>
+        При выходе или сворачивании приложения текущий вопрос пропускается.
+      </p>
     </section>
   );
 }
 
-function QuizSession({ quiz, resume }: { quiz: Quiz; resume: boolean }) {
+function QuizSession({
+  quiz,
+  resume,
+  resumeQuestionId,
+}: {
+  quiz: Quiz;
+  resume: boolean;
+  resumeQuestionId?: string | null;
+}) {
   const { name, setName, state, actionError, isLoading, sendAnswer } = useQuizSession(
     quiz.id,
     resume,
+    resumeQuestionId,
   );
   if (resume && !state)
     return (
@@ -153,6 +194,7 @@ function QuizSession({ quiz, resume }: { quiz: Quiz; resume: boolean }) {
         <QuestionTurn
           key={state.question.id}
           state={state}
+          quizId={quiz.id}
           busy={isLoading}
           error={actionError}
           onAnswer={sendAnswer}
@@ -164,7 +206,8 @@ function QuizSession({ quiz, resume }: { quiz: Quiz; resume: boolean }) {
           </span>
           <h2>Готовы к игре?</h2>
           <p className={styles.muted}>
-            После старта таймер не останавливается. При повторном входе вы продолжите свою попытку.
+            На вопрос даётся 60 секунд. Если выйти из квиза или свернуть приложение, текущий вопрос
+            будет пропущен. При продолжении откроется следующий.
           </p>
           <form
             className={styles.stack}
@@ -240,5 +283,12 @@ export function QuizPlay() {
         </div>
       </section>
     );
-  return <QuizSession key={quiz.id} quiz={quiz} resume={Boolean(progress)} />;
+  return (
+    <QuizSession
+      key={quiz.id}
+      quiz={quiz}
+      resume={Boolean(progress)}
+      resumeQuestionId={progress?.resume_question_id}
+    />
+  );
 }

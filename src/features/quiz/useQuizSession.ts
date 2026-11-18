@@ -12,8 +12,13 @@ interface QuizSessionState {
   sendAnswer: (answer?: string) => Promise<void>;
 }
 
-export function useQuizSession(quizId: string, resume: boolean): QuizSessionState {
+export function useQuizSession(
+  quizId: string,
+  resume: boolean,
+  resumeQuestionId?: string | null,
+): QuizSessionState {
   const [shouldResume] = useState(resume);
+  const [resumeTarget] = useState(resumeQuestionId);
   const [name, setName] = useState('');
   const [state, setState] = useState<PlayState | null>(null);
   const [actionError, setActionError] = useState('');
@@ -22,7 +27,7 @@ export function useQuizSession(quizId: string, resume: boolean): QuizSessionStat
   useEffect(() => {
     if (!shouldResume) return;
     let active = true;
-    void play({ quiz_id: quizId, resume_only: true })
+    void play({ quiz_id: quizId, resume_only: true, resume_question_id: resumeTarget })
       .unwrap()
       .then((next) => {
         if (active) setState(next);
@@ -33,7 +38,7 @@ export function useQuizSession(quizId: string, resume: boolean): QuizSessionStat
     return () => {
       active = false;
     };
-  }, [play, quizId, shouldResume]);
+  }, [play, quizId, shouldResume, resumeTarget]);
   async function sendAnswer(answer?: string): Promise<void> {
     if (sending.current) return;
     sending.current = true;
@@ -43,6 +48,7 @@ export function useQuizSession(quizId: string, resume: boolean): QuizSessionStat
         quiz_id: quizId,
         name: name.trim(),
         resume_only: shouldResume && !state,
+        ...(!state && shouldResume ? { resume_question_id: resumeTarget } : {}),
         ...(state?.question && answer !== undefined
           ? { question_id: state.question.id, answer_text: answer }
           : {}),

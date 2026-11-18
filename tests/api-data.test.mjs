@@ -207,6 +207,7 @@ test('personal progress is read only and restricted to the signed player identit
   assert.deepEqual(response.body, [
     {
       quiz_id: quizId,
+      resume_question_id: null,
       correct_count: null,
       answered_count: 2,
       pending_count: 1,
@@ -241,11 +242,14 @@ test('resume uses the existing participant without requesting a name', async (co
       assert.equal(options.method, 'GET');
       return jsonResponse({ id: participantId });
     }
+    if (url.pathname.endsWith('/shown_questions'))
+      return jsonResponse([{ question_id: questionId, question: { order_number: 1 } }]);
+    if (url.pathname.endsWith('/answers')) return jsonResponse([]);
     assert.ok(url.pathname.endsWith('/rpc/quiz_turn'));
     assert.deepEqual(JSON.parse(options.body), {
       p_participant_id: participantId,
-      p_question_id: null,
-      p_answer_text: null,
+      p_question_id: questionId,
+      p_answer_text: '',
     });
     return jsonResponse({ completed: false, answered: 1 });
   });
@@ -301,6 +305,100 @@ test('multiline answers are rejected before the progression RPC', async (context
       response,
     );
     assert.equal(response.statusCode, 400);
+  }
+  delete process.env.ALLOW_GUEST_PLAY;
+});
+
+test('forfeit records a blank answer only for the signed player and never starts the next question', async (context) => {
+  process.env.ALLOW_GUEST_PLAY = 'true';
+  const cookie = `quiz_player=${signSession({ role: 'player', id: -123, expires: Date.now() + 10000 })}`;
+  let writes = 0;
+  mockDatabase(context, (url, options) => {
+    if (url.pathname.endsWith('/rpc/consume_rate_limit')) return jsonResponse(true);
+    if (url.pathname.endsWith('/participants')) {
+      assert.equal(url.searchParams.get('telegram_id'), 'eq.-123');
+      return jsonResponse({ id: participantId });
+    }
+    if (url.pathname.endsWith('/shown_questions')) {
+      assert.equal(url.searchParams.get('participant_id'), `eq.${participantId}`);
+      assert.equal(url.searchParams.get('question_id'), `eq.${questionId}`);
+      assert.equal(url.searchParams.get('question.quiz_id'), `eq.${quizId}`);
+      return jsonResponse({ id: 'shown' });
+    }
+    assert.ok(url.pathname.endsWith('/answers'), 'No progression RPC on forfeit');
+    assert.equal(options.method, 'POST');
+    assert.match(new Headers(options.headers).get('Prefer'), /resolution=ignore-duplicates/);
+    assert.deepEqual(JSON.parse(options.body), {
+      participant_id: participantId,
+      question_id: questionId,
+      answer_text: '',
+      is_correct: null,
+    });
+    writes += 1;
+    return jsonResponse(null);
+  });
+  for (const repetition of [1, 2]) {
+    const response = responseMock();
+    await handler(
+      request(
+        'abandon',
+        'POST',
+        { quiz_id: quizId, question_id: questionId, participant_id: 'forged' },
+        cookie,
+      ),
+      response,
+    );
+    assert.equal(response.statusCode, 200);
+  }
+  assert.equal(writes, 2);
+  delete process.env.ALLOW_GUEST_PLAY;
+});
+
+test('forfeit cannot close an unseen question', async (context) => {
+  process.env.ALLOW_GUEST_PLAY = 'true';
+  const cookie = `quiz_player=${signSession({ role: 'player', id: -123, expires: Date.now() + 10000 })}`;
+  mockDatabase(context, (url) => {
+    if (url.pathname.endsWith('/rpc/consume_rate_limit')) return jsonResponse(true);
+    if (url.pathname.endsWith('/participants')) return jsonResponse({ id: participantId });
+    assert.ok(url.pathname.endsWith('/shown_questions'));
+    return jsonResponse(null);
+  });
+  const response = responseMock();
+  await handler(
+    request('abandon', 'POST', { quiz_id: quizId, question_id: questionId }, cookie),
+    response,
+  );
+  assert.equal(response.statusCode, 409);
+  delete process.env.ALLOW_GUEST_PLAY;
+});
+
+test('repeated resume requests reuse their original question snapshot', async (context) => {
+  process.env.ALLOW_GUEST_PLAY = 'true';
+  const cookie = `quiz_player=${signSession({ role: 'player', id: -123, expires: Date.now() + 10000 })}`;
+  mockDatabase(context, (url, options) => {
+    if (url.pathname.endsWith('/rpc/consume_rate_limit')) return jsonResponse(true);
+    if (url.pathname.endsWith('/quizzes')) return jsonResponse({ id: quizId });
+    if (url.pathname.endsWith('/participants')) return jsonResponse({ id: participantId });
+    assert.ok(url.pathname.endsWith('/rpc/quiz_turn'));
+    assert.deepEqual(JSON.parse(options.body), {
+      p_participant_id: participantId,
+      p_question_id: questionId,
+      p_answer_text: '',
+    });
+    return jsonResponse({ completed: false, question: { id: 'next-question' } });
+  });
+  for (const repetition of [1, 2]) {
+    const response = responseMock();
+    await handler(
+      request(
+        'play',
+        'POST',
+        { quiz_id: quizId, resume_only: true, resume_question_id: questionId },
+        cookie,
+      ),
+      response,
+    );
+    assert.equal(response.statusCode, 200);
   }
   delete process.env.ALLOW_GUEST_PLAY;
 });

@@ -46,6 +46,7 @@ export interface QuizResults {
 
 export interface QuizProgress {
   quiz_id: string;
+  resume_question_id?: string | null;
   correct_count: number | null;
   answered_count: number;
   pending_count: number;
@@ -64,6 +65,8 @@ export interface PlayState {
 
 export interface TelegramWebApp {
   initData: string;
+  onEvent?: (event: 'deactivated', callback: () => void) => void;
+  offEvent?: (event: 'deactivated', callback: () => void) => void;
   ready: () => void;
   expand: () => void;
 }

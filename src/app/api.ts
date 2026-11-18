@@ -90,6 +90,10 @@ export const api = createApi({
       query: (quizId) => `?action=results&quizId=${encodeURIComponent(quizId)}`,
       providesTags: ['Answer'],
     }),
+    abandonQuestion: builder.mutation<void, { quiz_id: string; question_id: string }>({
+      query: (body) => ({ url: '?action=abandon', method: 'POST', body, keepalive: true }),
+      invalidatesTags: ['Answer', 'Progress'],
+    }),
     play: builder.mutation<
       PlayState,
       {
@@ -98,6 +102,7 @@ export const api = createApi({
         question_id?: string;
         answer_text?: string;
         resume_only?: boolean;
+        resume_question_id?: string | null;
       }
     >({
       query: (body) => ({ url: '?action=play', method: 'POST', body }),
@@ -122,4 +127,5 @@ export const {
   useCheckAnswerMutation,
   useGetResultsQuery,
   usePlayMutation,
+  useAbandonQuestionMutation,
 } = api;

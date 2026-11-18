@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { groupResults, summarizeAnswers } from '../server/results.js';
+import { groupResults, summarizeAnswers, findUnansweredShownQuestion } from '../server/results.js';
 import { createClient } from '@supabase/supabase-js';
 import {
   HttpError,
@@ -96,6 +96,7 @@ const methods = {
   review: ['GET', 'PATCH'],
   results: ['GET'],
   play: ['POST'],
+  abandon: ['POST'],
 };
 
 export default async function handler(request, response) {
@@ -277,7 +278,9 @@ export default async function handler(request, response) {
       const participants = await readRows(
         supabase
           .from('participants')
-          .select('quiz_id, answers(is_correct), quiz:quizzes!inner(is_active, questions(count))')
+          .select(
+            'quiz_id, answers(question_id, is_correct), shown_questions(question_id, question:questions(order_number)), quiz:quizzes!inner(is_active, questions(count))',
+          )
           .eq('telegram_id', player.id)
           .eq('quiz.is_active', true)
           .order('id'),
@@ -290,12 +293,54 @@ export default async function handler(request, response) {
           );
           return {
             quiz_id: participant.quiz_id,
+            resume_question_id: findUnansweredShownQuestion(
+              participant.shown_questions || [],
+              participant.answers,
+            ),
             ...summary,
             correct_count:
               summary.completed && summary.pending_count === 0 ? summary.correct_count : null,
           };
         }),
       );
+    }
+    if (action === 'abandon') {
+      const player = findPlayer(request);
+      if (!player) throw new HttpError(401, 'Сессия участника не найдена.');
+      await rateLimit(request, response, 'play', 300, 60);
+      const quizId = uuidField(body.quiz_id);
+      const questionId = uuidField(body.question_id);
+      const participant = checked(
+        await supabase
+          .from('participants')
+          .select('id')
+          .eq('quiz_id', quizId)
+          .eq('telegram_id', player.id)
+          .maybeSingle(),
+      );
+      if (!participant) return response.json({ success: true });
+      const shown = checked(
+        await supabase
+          .from('shown_questions')
+          .select('id, question:questions!inner(quiz_id)')
+          .eq('participant_id', participant.id)
+          .eq('question_id', questionId)
+          .eq('question.quiz_id', quizId)
+          .maybeSingle(),
+      );
+      if (!shown) throw new HttpError(409, 'Этот вопрос ещё не был показан.');
+      checked(
+        await supabase.from('answers').upsert(
+          {
+            participant_id: participant.id,
+            question_id: questionId,
+            answer_text: '',
+            is_correct: null,
+          },
+          { onConflict: 'participant_id,question_id', ignoreDuplicates: true },
+        ),
+      );
+      return response.json({ success: true });
     }
     if (action === 'play') {
       const player = getPlayer(request, response);
@@ -318,6 +363,7 @@ export default async function handler(request, response) {
           .eq('telegram_id', player.id)
           .maybeSingle(),
       );
+      const existingParticipant = Boolean(participant);
       if (!participant) {
         if (body.resume_only === true)
           throw new HttpError(
@@ -346,7 +392,7 @@ export default async function handler(request, response) {
             .single(),
         );
       }
-      const questionId = body.question_id === undefined ? null : uuidField(body.question_id);
+      let questionId = body.question_id === undefined ? null : uuidField(body.question_id);
       if (
         questionId &&
         (typeof body.answer_text !== 'string' ||
@@ -354,11 +400,27 @@ export default async function handler(request, response) {
           /[\r\n\u2028\u2029]/.test(body.answer_text))
       )
         throw new HttpError(400, 'Ответ должен быть одной строкой, не длиннее 4000 символов.');
+      let answerText = questionId ? body.answer_text.trim() : null;
+      if (existingParticipant && !questionId) {
+        if (body.resume_question_id !== undefined) {
+          questionId = body.resume_question_id === null ? null : uuidField(body.resume_question_id);
+        } else {
+          const [shownResult, answersResult] = await Promise.all([
+            supabase
+              .from('shown_questions')
+              .select('question_id, question:questions(order_number)')
+              .eq('participant_id', participant.id),
+            supabase.from('answers').select('question_id').eq('participant_id', participant.id),
+          ]);
+          questionId = findUnansweredShownQuestion(checked(shownResult), checked(answersResult));
+        }
+        answerText = questionId ? '' : null;
+      }
       const state = checked(
         await supabase.rpc('quiz_turn', {
           p_participant_id: participant.id,
           p_question_id: questionId,
-          p_answer_text: questionId ? body.answer_text.trim() : null,
+          p_answer_text: answerText,
         }),
       );
       return response.json(state);
