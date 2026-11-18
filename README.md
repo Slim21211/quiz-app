@@ -1,6 +1,6 @@
 # Quizroom
 
-Каталог тематических квизов с Telegram Mini App, редактором вопросов и отдельной таблицей результатов для каждой игры. React 18, TypeScript, Redux Toolkit Query, SCSS Modules, Vite, Supabase/PostgreSQL и Telegraf. Фронтенд и две серверные функции размещаются одним проектом на Vercel.
+Каталог тематических квизов с Telegram Mini App, редактором вопросов и отдельной таблицей результатов для каждой игры. React 18, TypeScript, Redux Toolkit Query, SCSS Modules, Vite, Supabase/PostgreSQL и Telegraf. Фронтенд размещается на GitHub Pages (`https://quiz.elvada.ru`), две серверные функции остаются на Vercel (`https://api.quiz.elvada.ru`).
 
 ## Возможности
 
@@ -95,7 +95,7 @@ psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase-schema.sql -f tests/dat
 
 Vercel обслуживает существующие серверные функции `/api/quiz` и `/api/bot`, SPA-fallback исключает `/api`, чтобы запросы к функциям не превращались в HTML. Остальные маршруты обслуживаются через fallback из `vercel.json`. Для бота используется HTTPS-адрес каталога. В личном чате кнопка открывает каталог через `web_app`; в группе используется ссылка `https://t.me/<bot_username>?startapp`, открывающая Main Mini App без перехода в личный чат и повторного `/start`. Для группового запуска настройте Main Mini App в BotFather с URL корня приложения. Старые сообщения сохраняют прежние ссылки: после обновления отправьте `/start` в группе, чтобы получить новую кнопку.
 
-При регистрации webhook через Telegram Bot API укажите URL `WEB_APP_URL/api/bot` и параметр `secret_token`, равный `TELEGRAM_WEBHOOK_SECRET`. Не помещайте реальный токен в README, команды, историю терминала или логи. `GET /api/bot` — только проверка доступности HTTP-функции; он не проверяет настройки Telegram. `POST` без верного секретного заголовка отклоняется, а ошибки обработки возвращают 500 для повторной доставки Telegram.
+При регистрации webhook через Telegram Bot API укажите URL `API_BASE_URL/api/bot` и параметр `secret_token`, равный `TELEGRAM_WEBHOOK_SECRET`. В раздельной схеме нельзя использовать адрес фронтенда на Pages для webhook. Существующий рабочий webhook на Vercel можно сохранить. Не помещайте реальный токен в README, команды, историю терминала или логи. `GET /api/bot` — только проверка доступности HTTP-функции; он не проверяет настройки Telegram. `POST` без верного секретного заголовка отклоняется, а ошибки обработки возвращают 500 для повторной доставки Telegram.
 
 Проверка регистрации webhook без изменения настроек Telegram:
 
@@ -178,7 +178,7 @@ tests/                  Проверки безопасности, API, SQL и �
 
 ## Раздельное размещение: GitHub Pages и сервер
 
-Подготовлена схема размещения: статический фронтенд на `https://quiz.elvada.ru` через GitHub Pages, бот и API на отдельном HTTPS-адресе серверного хостинга. GitHub Pages не исполняет содержимое `api/`; папка остаётся в проекте для Vercel. Supabase и её серверный ключ продолжают использоваться только сервером.
+Схема размещения: статический фронтенд на `https://quiz.elvada.ru` через GitHub Pages, бот и API на `https://api.quiz.elvada.ru` через Vercel. GitHub Pages не исполняет содержимое `api/`; папка остаётся в проекте для Vercel. Supabase и её серверный ключ продолжают использоваться только сервером.
 
 CNAME `quiz.elvada.ru → slim21211.github.io` направляет домен на GitHub. Дополнительно домен нужно назначить в Settings → Pages репозитория и включить HTTPS после выпуска сертификата. Публикация приватного репозитория через Pages требует подходящего платного тарифа GitHub; для бесплатного варианта нужен публичный репозиторий. Изменение видимости согласовывается отдельно.
 
@@ -194,6 +194,8 @@ Workflow `.github/workflows/pages.yml` собирает фронтенд и пу
 | `ADDITIONAL_WEB_APP_ORIGINS` | Vercel, необязательно | Точные дополнительные origins через запятую для переходного периода, например прежний адрес фронтенда на Vercel |
 
 `VITE_API_BASE_URL` — публичный адрес, а не секрет. Он встраивается в сборку; после изменения нужна новая сборка Pages. Без этой переменной локальное приложение и Vercel сохраняют запросы к `/api/quiz` на своём origin. Для раздельного хостинга браузер отправляет cookies через `credentials: include`, а сервер разрешает CORS только настроенным origins. Для надёжной работы `SameSite=Strict` фронтенд и API должны находиться на HTTPS-поддоменах одного сайта, например `quiz.elvada.ru` и `api.quiz.elvada.ru`. Адреса `github.io` и `vercel.app` относятся к разным сайтам и не подходят для этой cookie-схемы.
+
+В GitHub Actions Secrets ничего переносить не нужно: `GITHUB_TOKEN` выдаётся workflow автоматически. `BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `SESSION_SECRET`, `ADMIN_PASSWORD`, `SUPABASE_URL` и `SUPABASE_SERVICE_ROLE_KEY` остаются на Vercel. Удалять их при переносе фронтенда нельзя. Старые `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY` больше не используются приложением и могут быть удалены, если остались в окружении. Переменные уведомлений не требуются.
 
 BrowserRouter сохраняет обычные маршруты `/quiz/:slug`. На Pages файл `404.html` переводит прямой вход на корневой HTML, затем `src/lib/staticRoute.ts` восстанавливает маршрут. Данные запуска Telegram остаются во фрагменте URL и не переносятся в query-запрос к серверу. HashRouter не используется, чтобы не конфликтовать с фрагментом запуска Telegram Mini App.
 
