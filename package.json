@@ -1,0 +1,39 @@
+{
+  "name": "quizroom",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test tests/*.test.mjs",
+    "format": "prettier --write src api server scripts tests vite.config.ts playwright.config.ts",
+    "format:check": "prettier --check src api server scripts tests vite.config.ts playwright.config.ts",
+    "test:ui": "playwright test"
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "^2.0.1",
+    "@supabase/supabase-js": "^2.39.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-redux": "^9.0.4",
+    "react-router-dom": "^7.18.5",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@types/node": "^20.10.6",
+    "@types/react": "^18.2.46",
+    "@types/react-dom": "^18.2.18",
+    "@vitejs/plugin-react": "^5.2.0",
+    "prettier": "^3.10.1",
+    "sass": "^1.108.2",
+    "typescript": "^5.3.3",
+    "vite": "^7.3.8"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

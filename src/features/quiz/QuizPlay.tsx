@@ -1,0 +1,179 @@
+import type { FormEvent } from 'react';
+import type { PlayState, Quiz } from '@/types';
+import { useState, useRef, useEffect } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { useGetQuizzesQuery } from '@/app/api';
+import { useQuizSession } from './useQuizSession';
+import { questionCountLabel } from '@/lib/text';
+import { useTimer } from '@/hooks/useTimer';
+import { Feedback, errorMessage } from '@/components/Feedback';
+import styles from '@/App.module.scss';
+
+function QuestionTurn({
+  state,
+  busy,
+  error,
+  onAnswer,
+}: {
+  state: PlayState;
+  busy: boolean;
+  error: string;
+  onAnswer: (answer: string) => Promise<void>;
+}) {
+  const [answer, setAnswer] = useState('');
+  const submitted = useRef(false);
+  const seconds = useTimer(state.deadline || state.server_time, state.server_time);
+  useEffect(() => {
+    if (seconds === 0 && !busy && !submitted.current) {
+      submitted.current = true;
+      void onAnswer('');
+    }
+  }, [seconds, busy, onAnswer]);
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy) return;
+    submitted.current = true;
+    await onAnswer(seconds > 0 ? answer : '');
+  }
+  return (
+    <section className={styles.playCard}>
+      <div className={styles.sectionHeader}>
+        <span className={styles.eyebrow}>
+          Вопрос {state.answered + 1} / {state.total}
+        </span>
+        <div
+          className={seconds <= 10 ? styles.timerWarning : styles.timer}
+          role="timer"
+          aria-label={`Осталось ${seconds} секунд`}
+        >
+          {String(seconds).padStart(2, '0')}
+          <small>сек</small>
+        </div>
+      </div>
+      <progress
+        className={styles.progress}
+        max={state.total}
+        value={state.answered}
+        aria-label="Прогресс квиза"
+      />
+      <h2 className={styles.questionTitle}>{state.question?.question_text}</h2>
+      <form className={styles.stack} onSubmit={handleSubmit}>
+        <label className={styles.field}>
+          Ваш ответ
+          <textarea
+            autoFocus
+            rows={4}
+            maxLength={4000}
+            placeholder="Сформулируйте ответ своими словами"
+            value={answer}
+            onChange={(event) => setAnswer(event.target.value)}
+            disabled={seconds === 0 || busy}
+          />
+        </label>
+        {error && <Feedback error message={error} />}
+        {seconds === 0 && (
+          <p className={styles.muted}>
+            Время вышло. {error ? 'Повторите сохранение, чтобы продолжить.' : 'Сохраняем пропуск…'}
+          </p>
+        )}
+        <button className={styles.primary} disabled={busy || (seconds > 0 && !answer.trim())}>
+          {busy ? 'Сохраняем…' : seconds === 0 ? 'Повторить сохранение' : 'Отправить ответ'}
+        </button>
+      </form>
+      <p className={styles.muted}>Отправленный ответ нельзя изменить. Проверка — после игры.</p>
+    </section>
+  );
+}
+
+function QuizSession({ quiz }: { quiz: Quiz }) {
+  const { name, setName, state, actionError, isLoading, sendAnswer } = useQuizSession(quiz.id);
+  if (state?.completed)
+    return (
+      <section className={`${styles.panel} ${styles.completion}`}>
+        <span className={styles.eyebrow}>Игра завершена</span>
+        <div className={styles.completionScore}>
+          {state.answered}
+          <span> / {state.total}</span>
+        </div>
+        <h1>Ваши ответы сохранены</h1>
+        <p>
+          Организатор проверит формулировки и выставит баллы. Следите за своей позицией в таблице.
+        </p>
+        <div className={styles.actions}>
+          <Link className={styles.primary} to={`/quiz/${quiz.slug}/results`}>
+            Смотреть результаты
+          </Link>
+          <Link className={styles.secondary} to="/">
+            Другие квизы
+          </Link>
+        </div>
+      </section>
+    );
+  return (
+    <>
+      <div className={styles.pageHeading}>
+        <Link to="/" className={styles.textButton}>
+          К каталогу
+        </Link>
+        <h1>{quiz.name}</h1>
+      </div>
+      {state?.question ? (
+        <QuestionTurn
+          key={state.question.id}
+          state={state}
+          busy={isLoading}
+          error={actionError}
+          onAnswer={sendAnswer}
+        />
+      ) : (
+        <section className={`${styles.panel} ${styles.narrow}`}>
+          <span className={styles.eyebrow}>
+            {questionCountLabel(quiz.question_count)} · 60 секунд на каждый
+          </span>
+          <h2>Готовы к игре?</h2>
+          <p className={styles.muted}>
+            После старта таймер не останавливается. При повторном входе вы продолжите свою попытку.
+            Для участия через браузер организатор должен разрешить гостевой режим.
+          </p>
+          <form
+            className={styles.stack}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void sendAnswer();
+            }}
+          >
+            <label className={styles.field}>
+              Имя в таблице результатов
+              <input
+                required
+                maxLength={80}
+                autoComplete="nickname"
+                placeholder="Имя или название команды"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+              <small>Это имя будет видно всем участникам.</small>
+            </label>
+            {actionError && <Feedback error message={actionError} />}
+            <button className={styles.primary} disabled={isLoading || !quiz.question_count}>
+              {isLoading ? 'Готовим игру…' : 'Начать или продолжить'}
+            </button>
+          </form>
+        </section>
+      )}
+    </>
+  );
+}
+
+export function QuizPlay() {
+  const { slug } = useParams<{ slug: string }>();
+  const { data: quizzes = [], isLoading, error, refetch } = useGetQuizzesQuery();
+  const quiz = quizzes.find((item) => item.slug === slug && item.is_active);
+  if (isLoading) return <Feedback message="Загружаем квиз…" />;
+  if (error) return <Feedback error message={errorMessage(error)} retry={refetch} />;
+  if (!quiz)
+    return (
+      <Feedback message="Квиз не найден или ещё не опубликован. Выберите другую игру в каталоге." />
+    );
+  return <QuizSession key={quiz.id} quiz={quiz} />;
+}
