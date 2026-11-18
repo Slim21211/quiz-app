@@ -89,3 +89,32 @@ test('webhook setup validates configuration and redacts network failures', async
       !error.message.includes(environment.BOT_TOKEN) && error.message.includes('request failed'),
   );
 });
+
+test('webhook registration uses the API host when the frontend is on Pages', async (context) => {
+  context.mock.method(console, 'log', () => {});
+  context.mock.method(globalThis, 'fetch', async (input, options = {}) => {
+    const url = new URL(input);
+    assert.notEqual(url.hostname, 'pages.example.test');
+    if (url.hostname === 'api.example.test') return new Response(null, { status: 400 });
+    const method = url.pathname.split('/').at(-1);
+    if (method === 'getMe')
+      return new Response(JSON.stringify({ ok: true, result: { username: 'TestQuizBot' } }));
+    if (method === 'getWebhookInfo')
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          result: { url: 'https://api.example.test/api/bot', pending_update_count: 0 },
+        }),
+      );
+    assert.equal(JSON.parse(options.body).url, 'https://api.example.test/api/bot');
+    return new Response(JSON.stringify({ ok: true, result: true }));
+  });
+  await configureWebhook(
+    {
+      ...environment,
+      WEB_APP_URL: 'https://pages.example.test',
+      API_BASE_URL: 'https://api.example.test',
+    },
+    true,
+  );
+});

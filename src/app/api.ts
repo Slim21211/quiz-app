@@ -1,3 +1,4 @@
+import { getApiBaseUrl } from '@/lib/apiUrl';
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import type {
   Quiz,
@@ -11,7 +12,8 @@ import type {
 export const api = createApi({
   reducerPath: 'api',
   baseQuery: fetchBaseQuery({
-    baseUrl: '/api/quiz',
+    baseUrl: getApiBaseUrl(import.meta.env.VITE_API_BASE_URL),
+    credentials: 'include',
     prepareHeaders: (headers) => {
       const initData = window.Telegram?.WebApp.initData;
       if (initData) headers.set('X-Telegram-Init-Data', initData);

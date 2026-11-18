@@ -1,3 +1,4 @@
+import { handleCors } from '../server/cors.js';
 import { createHmac } from 'node:crypto';
 import { groupResults, summarizeAnswers, findUnansweredShownQuestion } from '../server/results.js';
 import { createClient } from '@supabase/supabase-js';
@@ -103,6 +104,7 @@ export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store');
   response.setHeader('X-Content-Type-Options', 'nosniff');
   try {
+    if (handleCors(request, response)) return;
     const action = request.query.action;
     if (typeof action !== 'string' || !Object.hasOwn(methods, action))
       throw new HttpError(404, 'Маршрут не найден.');

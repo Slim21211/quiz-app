@@ -14,13 +14,13 @@ export async function configureWebhook(environment, apply = false) {
   }
   let endpoint;
   try {
-    const application = new URL(environment.WEB_APP_URL);
+    const application = new URL(environment.API_BASE_URL || environment.WEB_APP_URL);
     if (application.protocol !== 'https:' || application.username || application.password) {
       throw new Error('Invalid application URL');
     }
     endpoint = new URL('/api/bot', application.origin);
   } catch {
-    throw new SetupError('WEB_APP_URL must be a public HTTPS application URL.');
+    throw new SetupError('API_BASE_URL (or WEB_APP_URL) must be a public HTTPS server URL.');
   }
 
   async function telegram(method, body) {
@@ -62,7 +62,7 @@ export async function configureWebhook(environment, apply = false) {
   }
   if (probe.status !== 400) {
     throw new SetupError(
-      `Webhook preflight returned HTTP ${probe.status}; expected 400. Check the deployed TELEGRAM_WEBHOOK_SECRET and WEB_APP_URL.`,
+      `Webhook preflight returned HTTP ${probe.status}; expected 400. Check the deployed TELEGRAM_WEBHOOK_SECRET and API_BASE_URL.`,
     );
   }
   console.log(`Bot: @${identity.username}`);

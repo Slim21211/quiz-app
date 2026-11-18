@@ -11,6 +11,8 @@ for (const name of [
   'ALLOW_GUEST_PLAY',
   'BOT_TOKEN',
   'WEB_APP_URL',
+  'API_BASE_URL',
+  'ADDITIONAL_WEB_APP_ORIGINS',
   'TELEGRAM_WEBHOOK_SECRET',
 ]) {
   if (!process.env[name] && environment[name]) process.env[name] = environment[name];

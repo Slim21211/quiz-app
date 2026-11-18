@@ -145,12 +145,26 @@ export function getPlayer(request, response) {
   return { id: identity, first_name: null, username: null };
 }
 
+export function isAllowedOrigin(origin, environment = process.env) {
+  if (typeof origin !== 'string' || origin === 'null') return false;
+  const configured = [
+    environment.WEB_APP_URL,
+    ...(environment.ADDITIONAL_WEB_APP_ORIGINS || '').split(','),
+  ];
+  return configured.some((value) => {
+    if (!value?.trim()) return false;
+    try {
+      return origin === new URL(value.trim()).origin;
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function requireSameOrigin(request) {
   const origin = request.headers.origin;
   if (!origin) throw new HttpError(403, 'Отсутствует Origin запроса.');
-  const allowedOrigin = process.env.WEB_APP_URL;
-  if (!allowedOrigin || origin !== new URL(allowedOrigin).origin)
-    throw new HttpError(403, 'Недопустимый источник запроса.');
+  if (!isAllowedOrigin(origin)) throw new HttpError(403, 'Недопустимый источник запроса.');
 }
 
 export function textField(value, label, maxLength) {

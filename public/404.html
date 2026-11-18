@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Quizroom</title>
+    <script>
+      const destination = new URL('/', window.location.origin);
+      destination.searchParams.set(
+        '__quiz_route',
+        window.location.pathname + window.location.search,
+      );
+      destination.hash = window.location.hash;
+      window.location.replace(destination.href);
+    </script>
+  </head>
+  <body>
+    <p>Открываем Quizroom…</p>
+    <noscript>Для работы приложения включите JavaScript.</noscript>
+  </body>
+</html>
