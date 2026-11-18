@@ -319,6 +319,11 @@ export default async function handler(request, response) {
           .maybeSingle(),
       );
       if (!participant) {
+        if (body.resume_only === true)
+          throw new HttpError(
+            409,
+            'Попытка не найдена. Вернитесь в каталог и начните квиз заново.',
+          );
         const name = textField(body.name, 'Имя участника', 80);
         checked(
           await supabase.from('participants').upsert(
@@ -342,8 +347,13 @@ export default async function handler(request, response) {
         );
       }
       const questionId = body.question_id === undefined ? null : uuidField(body.question_id);
-      if (questionId && (typeof body.answer_text !== 'string' || body.answer_text.length > 4000))
-        throw new HttpError(400, 'Ответ должен быть не длиннее 4000 символов.');
+      if (
+        questionId &&
+        (typeof body.answer_text !== 'string' ||
+          body.answer_text.length > 4000 ||
+          /[\r\n\u2028\u2029]/.test(body.answer_text))
+      )
+        throw new HttpError(400, 'Ответ должен быть одной строкой, не длиннее 4000 символов.');
       const state = checked(
         await supabase.rpc('quiz_turn', {
           p_participant_id: participant.id,

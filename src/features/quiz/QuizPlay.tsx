@@ -22,6 +22,10 @@ function QuestionTurn({
 }) {
   const [answer, setAnswer] = useState('');
   const submitted = useRef(false);
+  const answerInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    answerInput.current?.focus({ preventScroll: true });
+  }, []);
   const seconds = useTimer(state.deadline || state.server_time, state.server_time);
   useEffect(() => {
     if (seconds === 0 && !busy && !submitted.current) {
@@ -29,9 +33,9 @@ function QuestionTurn({
       void onAnswer('');
     }
   }, [seconds, busy, onAnswer]);
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (busy) return;
+    if (busy || (seconds > 0 && !answer.trim())) return;
     submitted.current = true;
     await onAnswer(seconds > 0 ? answer : '');
   }
@@ -60,9 +64,15 @@ function QuestionTurn({
       <form className={styles.stack} onSubmit={handleSubmit}>
         <label className={styles.field}>
           Ваш ответ
-          <textarea
-            autoFocus
-            rows={4}
+          <input
+            type="text"
+            enterKeyHint="send"
+            autoComplete="off"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault();
+            }}
+            ref={answerInput}
+            required
             maxLength={4000}
             placeholder="Сформулируйте ответ своими словами"
             value={answer}
@@ -85,8 +95,30 @@ function QuestionTurn({
   );
 }
 
-function QuizSession({ quiz }: { quiz: Quiz }) {
-  const { name, setName, state, actionError, isLoading, sendAnswer } = useQuizSession(quiz.id);
+function QuizSession({ quiz, resume }: { quiz: Quiz; resume: boolean }) {
+  const { name, setName, state, actionError, isLoading, sendAnswer } = useQuizSession(
+    quiz.id,
+    resume,
+  );
+  if (resume && !state)
+    return (
+      <>
+        {actionError ? (
+          <Feedback
+            error
+            message={actionError}
+            retry={() => {
+              void sendAnswer();
+            }}
+          />
+        ) : (
+          <Feedback message="Продолжаем квиз…" />
+        )}
+        <Link className={styles.secondary} to="/">
+          К каталогу
+        </Link>
+      </>
+    );
   if (state?.completed)
     return (
       <section className={`${styles.panel} ${styles.completion}`}>
@@ -156,7 +188,7 @@ function QuizSession({ quiz }: { quiz: Quiz }) {
             {actionError && <Feedback error message={actionError} />}
             <div className={styles.introActions}>
               <button className={styles.primary} disabled={isLoading || !quiz.question_count}>
-                {isLoading ? 'Готовим игру…' : 'Начать или продолжить'}
+                {isLoading ? 'Готовим игру…' : 'Начать игру'}
               </button>
               <Link className={styles.secondary} to="/">
                 Отмена
@@ -208,5 +240,5 @@ export function QuizPlay() {
         </div>
       </section>
     );
-  return <QuizSession key={quiz.id} quiz={quiz} />;
+  return <QuizSession key={quiz.id} quiz={quiz} resume={Boolean(progress)} />;
 }

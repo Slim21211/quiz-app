@@ -230,3 +230,77 @@ test('anonymous progress lookup never registers a guest or queries participant d
   assert.equal(response.headers['Set-Cookie'], undefined);
   delete process.env.ALLOW_GUEST_PLAY;
 });
+
+test('resume uses the existing participant without requesting a name', async (context) => {
+  process.env.ALLOW_GUEST_PLAY = 'true';
+  const cookie = `quiz_player=${signSession({ role: 'player', id: -123, expires: Date.now() + 10000 })}`;
+  mockDatabase(context, (url, options) => {
+    if (url.pathname.endsWith('/rpc/consume_rate_limit')) return jsonResponse(true);
+    if (url.pathname.endsWith('/quizzes')) return jsonResponse({ id: quizId });
+    if (url.pathname.endsWith('/participants')) {
+      assert.equal(options.method, 'GET');
+      return jsonResponse({ id: participantId });
+    }
+    assert.ok(url.pathname.endsWith('/rpc/quiz_turn'));
+    assert.deepEqual(JSON.parse(options.body), {
+      p_participant_id: participantId,
+      p_question_id: null,
+      p_answer_text: null,
+    });
+    return jsonResponse({ completed: false, answered: 1 });
+  });
+  const response = responseMock();
+  await handler(request('play', 'POST', { quiz_id: quizId, resume_only: true }, cookie), response);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.answered, 1);
+  delete process.env.ALLOW_GUEST_PLAY;
+});
+
+test('resume of a deleted attempt never registers a new participant', async (context) => {
+  process.env.ALLOW_GUEST_PLAY = 'true';
+  const cookie = `quiz_player=${signSession({ role: 'player', id: -123, expires: Date.now() + 10000 })}`;
+  mockDatabase(context, (url, options) => {
+    if (url.pathname.endsWith('/rpc/consume_rate_limit')) return jsonResponse(true);
+    if (url.pathname.endsWith('/quizzes')) return jsonResponse({ id: quizId });
+    assert.ok(url.pathname.endsWith('/participants'));
+    assert.equal(options.method, 'GET');
+    return jsonResponse(null);
+  });
+  const response = responseMock();
+  await handler(
+    request(
+      'play',
+      'POST',
+      { quiz_id: quizId, resume_only: true, name: 'Must not register' },
+      cookie,
+    ),
+    response,
+  );
+  assert.equal(response.statusCode, 409);
+  delete process.env.ALLOW_GUEST_PLAY;
+});
+
+test('multiline answers are rejected before the progression RPC', async (context) => {
+  process.env.ALLOW_GUEST_PLAY = 'true';
+  const cookie = `quiz_player=${signSession({ role: 'player', id: -123, expires: Date.now() + 10000 })}`;
+  mockDatabase(context, (url) => {
+    if (url.pathname.endsWith('/rpc/consume_rate_limit')) return jsonResponse(true);
+    if (url.pathname.endsWith('/quizzes')) return jsonResponse({ id: quizId });
+    assert.ok(url.pathname.endsWith('/participants'));
+    return jsonResponse({ id: participantId });
+  });
+  for (const separator of ['\n', '\r', '\u2028', '\u2029']) {
+    const response = responseMock();
+    await handler(
+      request(
+        'play',
+        'POST',
+        { quiz_id: quizId, question_id: questionId, answer_text: `first${separator}second` },
+        cookie,
+      ),
+      response,
+    );
+    assert.equal(response.statusCode, 400);
+  }
+  delete process.env.ALLOW_GUEST_PLAY;
+});

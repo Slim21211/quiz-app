@@ -11,6 +11,7 @@ import {
 import { Provider } from 'react-redux';
 import { store } from './app/store';
 import { useGetSessionQuery, useLogoutMutation } from './app/api';
+import { ScrollToTop } from './components/ScrollToTop';
 import { AdminGate } from './components/AdminGate';
 import { Feedback, errorMessage } from './components/Feedback';
 import { CreateQuestions } from './features/admin/CreateQuestions';
@@ -114,6 +115,7 @@ function App() {
   return (
     <Provider store={store}>
       <BrowserRouter>
+        <ScrollToTop />
         <Routes>
           <Route element={<Layout />}>
             <Route index element={<QuizSelect />} />

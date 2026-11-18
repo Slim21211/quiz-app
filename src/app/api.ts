@@ -92,7 +92,13 @@ export const api = createApi({
     }),
     play: builder.mutation<
       PlayState,
-      { quiz_id: string; name?: string; question_id?: string; answer_text?: string }
+      {
+        quiz_id: string;
+        name?: string;
+        question_id?: string;
+        answer_text?: string;
+        resume_only?: boolean;
+      }
     >({
       query: (body) => ({ url: '?action=play', method: 'POST', body }),
       invalidatesTags: ['Answer', 'Progress'],

@@ -16,9 +16,10 @@ export function Results() {
     error: quizzesError,
     refetch: refetchQuizzes,
   } = useGetQuizzesQuery();
+  const activeQuizzes = quizzes.filter((item) => item.is_active);
   const quiz = slug
-    ? quizzes.find((item) => item.slug === slug)
-    : quizzes.find((item) => item.id === selectedId) || quizzes[0];
+    ? activeQuizzes.find((item) => item.slug === slug)
+    : activeQuizzes.find((item) => item.id === selectedId) || activeQuizzes[0];
   const {
     currentData: results,
     isFetching,
@@ -44,10 +45,10 @@ export function Results() {
         <>
           <div className={styles.resultsToolbar}>
             <QuizPicker
-              quizzes={quizzes}
+              quizzes={activeQuizzes}
               selected={quiz.id}
               onChange={(quizId) => {
-                const selected = quizzes.find((item) => item.id === quizId);
+                const selected = activeQuizzes.find((item) => item.id === quizId);
                 setSelectedId(quizId);
                 if (slug && selected) navigate(`/quiz/${selected.slug}/results`);
               }}

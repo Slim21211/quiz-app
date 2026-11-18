@@ -220,10 +220,10 @@ test('participant starts a quiz, submits an answer and reaches results', async (
   await mockApi(page);
   await page.goto('/quiz/cinema');
   await page.getByLabel('Имя в таблице результатов').fill('Команда Альфа');
-  await page.getByRole('button', { name: 'Начать или продолжить' }).click();
+  await page.getByRole('button', { name: 'Начать игру', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Кто снял фильм «Сталкер»?' })).toBeVisible();
   await page.getByLabel('Ваш ответ').fill('Андрей Тарковский');
-  await page.getByRole('button', { name: 'Отправить ответ' }).click();
+  await page.getByLabel('Ваш ответ').press('Enter');
   await expect(page.getByRole('link', { name: 'Смотреть результаты' })).toBeVisible();
   await page.getByRole('link', { name: 'Смотреть результаты' }).click();
   await expect(page.getByRole('list', { name: 'Итоговые результаты' })).toBeVisible();
@@ -360,10 +360,17 @@ test('pending and unfinished players are separate from the ranked list without s
 });
 
 test('quiz picker supports search, keyboard selection and Escape', async ({ page }) => {
-  await mockApi(page);
+  await mockApi(page, true);
   await page.route('**/api/quiz?action=quizzes', (route) =>
     route.fulfill({
       json: [
+        {
+          id: 'hidden-id',
+          name: 'Скрытый квиз',
+          slug: 'hidden',
+          is_active: false,
+          question_count: 1,
+        },
         { id: quizId, name: 'Кино без границ', slug: 'cinema', is_active: true, question_count: 1 },
         {
           id: 'science-id',
@@ -377,7 +384,9 @@ test('quiz picker supports search, keyboard selection and Escape', async ({ page
   );
   await page.goto('/results');
   const picker = page.getByRole('combobox', { name: 'Квиз', exact: true });
+  await expect(picker).toHaveValue('Кино без границ');
   await picker.click();
+  await expect(page.getByRole('option')).toHaveCount(2);
   await picker.fill('Наука');
   await expect(page.getByRole('option')).toHaveCount(1);
   await picker.press('Enter');
@@ -428,6 +437,8 @@ test('an unfinished attempt offers continuation after reload', async ({ page }) 
   await expect(page.getByRole('article')).toContainText('В процессе');
   await page.getByRole('link', { name: 'Продолжить', exact: true }).click();
   await expect(page).toHaveURL('/quiz/cinema');
+  await expect(page.getByRole('heading', { name: 'Кто снял фильм «Сталкер»?' })).toBeVisible();
+  await expect(page.getByLabel('Имя в таблице результатов')).toHaveCount(0);
 });
 
 test('long participant names fit narrow result cards', async ({ page }) => {
@@ -459,4 +470,91 @@ test('long participant names fit narrow result cards', async ({ page }) => {
   );
   const rows = page.getByRole('list', { name: 'Итоговые результаты' }).getByRole('listitem');
   expect(await rows.first().evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+});
+
+test('route changes and browser history always scroll to the page top', async ({ page }) => {
+  await mockApi(page);
+  await page.goto('/');
+  await expect(page.getByRole('article')).toHaveCount(1);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await page
+    .getByRole('navigation', { name: 'Главная навигация' })
+    .getByRole('link', { name: 'Результаты' })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Результаты', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Выберите квиз' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+});
+
+test('resume opens the next unanswered question with the existing deadline and no name prompt', async ({
+  page,
+}) => {
+  await mockApi(page, false, [
+    {
+      quiz_id: quizId,
+      answered_count: 1,
+      total_count: 3,
+      pending_count: 1,
+      correct_count: null,
+      completed: false,
+    },
+  ]);
+  await page.route('**/api/quiz?action=play', async (route) => {
+    const payload: unknown = route.request().postDataJSON();
+    expect(
+      typeof payload === 'object' &&
+        payload !== null &&
+        'resume_only' in payload &&
+        payload.resume_only === true,
+    ).toBe(true);
+    expect(typeof payload === 'object' && payload !== null && 'name' in payload).toBe(false);
+    await route.fulfill({
+      json: {
+        question: {
+          id: 'next-question',
+          question_text: 'Следующий вопрос после сохранённого ответа',
+          order_number: 2,
+        },
+        deadline: new Date(Date.now() + 15000).toISOString(),
+        server_time: new Date().toISOString(),
+        total: 3,
+        answered: 1,
+        completed: false,
+      },
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Продолжить', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Следующий вопрос после сохранённого ответа' }),
+  ).toBeVisible();
+  await expect(page.getByText('Вопрос 2 / 3', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Имя в таблице результатов')).toHaveCount(0);
+  await expect(page.getByRole('timer')).toHaveAttribute('aria-label', /Осталось 1[45] секунд/);
+});
+
+test('failed resume offers retry without displaying the registration form', async ({ page }) => {
+  await mockApi(page, false, [
+    {
+      quiz_id: quizId,
+      answered_count: 0,
+      total_count: 1,
+      pending_count: 0,
+      correct_count: null,
+      completed: false,
+    },
+  ]);
+  await page.route('**/api/quiz?action=play', (route) =>
+    route.fulfill({ status: 503, json: { message: 'Не удалось продолжить игру' } }),
+  );
+  await page.goto('/quiz/cinema');
+  await expect(page.getByRole('alert')).toContainText('Не удалось продолжить игру');
+  await expect(page.getByLabel('Имя в таблице результатов')).toHaveCount(0);
+  await page.unroute('**/api/quiz?action=play');
+  await page.getByRole('button', { name: 'Повторить' }).click();
+  await expect(page.getByRole('heading', { name: 'Кто снял фильм «Сталкер»?' })).toBeVisible();
 });
