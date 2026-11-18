@@ -620,6 +620,7 @@ test('leaving the quiz route closes the question while StrictMode does not', asy
 
 test('Telegram deactivation closes the displayed question', async ({ page }) => {
   await mockApi(page);
+  await page.route('**/vendor/telegram-web-app.*.js', (route) => route.abort());
   await page.addInitScript(() => {
     window.Telegram = {
       WebApp: {
@@ -638,4 +639,54 @@ test('Telegram deactivation closes the displayed question', async ({ page }) => 
   await page.evaluate(() => window.dispatchEvent(new Event('telegram-deactivated')));
   await expect(page.getByRole('heading', { name: 'Вопрос пропущен' })).toBeVisible();
   await expect(page.getByLabel('Ваш ответ')).toHaveCount(0);
+});
+
+test('local Telegram SDK starts with telegram.org blocked and forwards launch data on the first API request', async ({
+  page,
+}) => {
+  await mockApi(page);
+  const externalRequests: string[] = [];
+  const apiInitData: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.hostname === 'telegram.org' || url.hostname.endsWith('.telegram.org')) {
+      externalRequests.push(url.origin);
+    }
+    if (url.pathname === '/api/quiz') {
+      apiInitData.push(request.headers()['x-telegram-init-data'] || '');
+    }
+  });
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'TelegramWebviewProxy', {
+      value: {
+        postEvent(eventType: string) {
+          if (eventType === 'web_app_ready') {
+            document.documentElement.setAttribute('data-test-telegram-ready', 'true');
+          }
+          if (eventType === 'web_app_expand') {
+            document.documentElement.setAttribute('data-test-telegram-expanded', 'true');
+          }
+        },
+      },
+    });
+  });
+  const initData = new URLSearchParams({
+    user: JSON.stringify({ id: 12345, first_name: 'Test player' }),
+    auth_date: String(Math.floor(Date.now() / 1000)),
+    query_id: 'test-only-sdk-handoff',
+    hash: 'test-only-signature',
+  }).toString();
+  const fragment = new URLSearchParams({
+    tgWebAppData: initData,
+    tgWebAppVersion: '8.0',
+    tgWebAppPlatform: 'android',
+  });
+  await page.goto(`/#${fragment}`);
+  await expect(page.getByRole('heading', { name: 'Кино без границ', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.Telegram?.WebApp.initData)).toBe(initData);
+  await expect(page.locator('html')).toHaveAttribute('data-test-telegram-ready', 'true');
+  await expect(page.locator('html')).toHaveAttribute('data-test-telegram-expanded', 'true');
+  expect(apiInitData.length).toBeGreaterThan(0);
+  expect(apiInitData.every((value) => value === initData)).toBe(true);
+  expect(externalRequests).toEqual([]);
 });
