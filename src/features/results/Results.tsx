@@ -1,12 +1,15 @@
 import { useState } from 'react';
+import { useDispatch } from 'react-redux';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { useGetQuizzesQuery, useGetResultsQuery } from '@/app/api';
+import { api, useGetQuizzesQuery, useGetResultsQuery } from '@/app/api';
 import { Feedback, errorMessage } from '@/components/Feedback';
 import { QuizPicker } from '@/components/QuizPicker';
 import { ResultGroups } from './ResultGroups';
+import { PersonalResults } from './PersonalResults';
 import styles from '@/App.module.scss';
 
 export function Results() {
+  const dispatch = useDispatch();
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState('');
@@ -53,10 +56,15 @@ export function Results() {
                 if (slug && selected) navigate(`/quiz/${selected.slug}/results`);
               }}
             />
-            <button className={styles.secondary} onClick={refetch} disabled={isFetching}>
+            <button
+              className={styles.secondary}
+              onClick={() => dispatch(api.util.invalidateTags(['Answer', 'Progress']))}
+              disabled={isFetching}
+            >
               Обновить
             </button>
           </div>
+          <PersonalResults key={quiz.id} quizId={quiz.id} />
           {error ? (
             <Feedback error message={errorMessage(error)} retry={refetch} />
           ) : !results ? (

@@ -6,6 +6,7 @@ import type {
   QuizResults,
   QuizProgress,
   PlayState,
+  PersonalReview,
 } from '@/types';
 import { getApiBaseUrl } from '@/lib/apiUrl';
 import { createApiSessions, usesHeaderSessions } from '@/lib/apiSession';
@@ -37,7 +38,7 @@ const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> =
 export const api = createApi({
   reducerPath: 'api',
   baseQuery,
-  tagTypes: ['Quiz', 'Question', 'Answer', 'Session', 'Progress'],
+  tagTypes: ['Quiz', 'Question', 'Answer', 'Session', 'Progress', 'ReviewCount'],
   endpoints: (builder) => ({
     getSession: builder.query<{ admin: boolean }, void>({
       query: () => '?action=session',
@@ -66,6 +67,14 @@ export const api = createApi({
     getMyProgress: builder.query<QuizProgress[], void>({
       query: () => '?action=my-progress',
       providesTags: ['Progress'],
+    }),
+    getMyReview: builder.query<PersonalReview, string>({
+      query: (quizId) => `?action=my-review&quizId=${encodeURIComponent(quizId)}`,
+      providesTags: ['Answer', 'Progress'],
+    }),
+    getReviewCount: builder.query<{ count: number }, void>({
+      query: () => '?action=review-count',
+      providesTags: ['ReviewCount', 'Session'],
     }),
     createQuiz: builder.mutation<Quiz, { name: string; slug: string }>({
       query: (body) => ({ url: '?action=quiz', method: 'POST', body }),
@@ -103,7 +112,7 @@ export const api = createApi({
     }),
     checkAnswer: builder.mutation<void, { id: string; is_correct: boolean | null }>({
       query: (body) => ({ url: '?action=review', method: 'PATCH', body }),
-      invalidatesTags: ['Answer', 'Progress'],
+      invalidatesTags: ['Answer', 'Progress', 'ReviewCount'],
     }),
     getResults: builder.query<QuizResults, string>({
       query: (quizId) => `?action=results&quizId=${encodeURIComponent(quizId)}`,
@@ -111,7 +120,7 @@ export const api = createApi({
     }),
     abandonQuestion: builder.mutation<void, { quiz_id: string; question_id: string }>({
       query: (body) => ({ url: '?action=abandon', method: 'POST', body, keepalive: true }),
-      invalidatesTags: ['Answer', 'Progress'],
+      invalidatesTags: ['Answer', 'Progress', 'ReviewCount'],
     }),
     play: builder.mutation<
       PlayState,
@@ -125,7 +134,7 @@ export const api = createApi({
       }
     >({
       query: (body) => ({ url: '?action=play', method: 'POST', body }),
-      invalidatesTags: ['Answer', 'Progress'],
+      invalidatesTags: ['Answer', 'Progress', 'ReviewCount'],
     }),
   }),
 });
@@ -136,6 +145,8 @@ export const {
   useLogoutMutation,
   useGetQuizzesQuery,
   useGetMyProgressQuery,
+  useGetMyReviewQuery,
+  useGetReviewCountQuery,
   useCreateQuizMutation,
   useUpdateQuizMutation,
   useGetQuestionsQuery,

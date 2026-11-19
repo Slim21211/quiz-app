@@ -63,6 +63,17 @@ export interface PlayState {
   server_time: string;
 }
 
+export interface PersonalAnswer {
+  id: string;
+  answer_text: string;
+  is_correct: boolean;
+  question: Pick<Question, 'id' | 'question_text' | 'correct_answer' | 'order_number'>;
+}
+
+export type PersonalReview =
+  | { status: 'not_started' | 'in_progress' | 'pending' }
+  | { status: 'ready'; correct_count: number; total_count: number; answers: PersonalAnswer[] };
+
 export interface TelegramWebApp {
   initData: string;
   onEvent?: (event: 'deactivated', callback: () => void) => void;

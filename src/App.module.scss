@@ -36,11 +36,21 @@
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  display: grid;
+  display: block;
+  flex-shrink: 0;
+}
+.navCount {
+  display: inline-grid;
   place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 6px;
   background: var(--accent);
   color: var(--accent-text);
-  font-size: 26px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .nav {
   display: grid;
@@ -53,8 +63,11 @@
   color: var(--muted);
   a {
     min-height: 40px;
-    display: grid;
-    place-items: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
     padding: 8px;
     border-radius: 6px;
   }
@@ -482,6 +495,24 @@
     border-radius: 8px;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+  }
+}
+.personalReview {
+  margin-bottom: 24px;
+  padding: 24px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  h2 {
+    margin: 0 0 8px;
+  }
+  summary {
+    width: fit-content;
+    cursor: pointer;
+    color: var(--accent);
+    padding: 8px 0;
+  }
+  details[open] > summary {
+    margin-bottom: 16px;
   }
 }
 .hint {

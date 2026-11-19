@@ -39,6 +39,7 @@ async function mockEdge(page: Page): Promise<void> {
       return;
     }
     if (action === 'session') response = { admin };
+    if (action === 'review-count') response = { count: 0 };
     await route.fulfill({ headers, body: JSON.stringify(response) });
   });
 }

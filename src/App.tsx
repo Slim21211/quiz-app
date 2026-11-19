@@ -10,7 +10,7 @@ import {
 } from 'react-router-dom';
 import { Provider } from 'react-redux';
 import { store } from './app/store';
-import { useGetSessionQuery, useLogoutMutation } from './app/api';
+import { useGetSessionQuery, useGetReviewCountQuery, useLogoutMutation } from './app/api';
 import { ScrollToTop } from './components/ScrollToTop';
 import { AdminGate } from './components/AdminGate';
 import { Feedback, errorMessage } from './components/Feedback';
@@ -27,13 +27,19 @@ function Layout() {
   const { pathname } = useLocation();
   const showingQuizResults = /^\/quiz\/[^/]+\/results\/?$/.test(pathname);
   const { data } = useGetSessionQuery();
+  const reviewCount = useGetReviewCountQuery(undefined, {
+    skip: !data?.admin,
+    pollingInterval: 15000,
+    refetchOnMountOrArgChange: true,
+  });
   const [logout, { error, isLoading }] = useLogoutMutation();
   return (
     <div className={styles.app}>
       <header className={styles.header}>
         <div className={styles.headerInner}>
           <Link className={styles.brand} to="/" aria-label="Quizroom — каталог квизов">
-            <span className={styles.brandMark}>Q</span>Quizroom
+            <img className={styles.brandMark} src="/brand.svg" alt="" width="36" height="36" />
+            Quizroom
           </Link>
           <nav className={styles.nav} aria-label="Главная навигация">
             <NavLink
@@ -60,6 +66,26 @@ function Layout() {
               className={({ isActive }) => (isActive ? styles.activeNav : undefined)}
             >
               Управление
+              {data?.admin && (
+                <span
+                  className={styles.navCount}
+                  aria-label={
+                    reviewCount.error
+                      ? 'Не удалось обновить число непроверенных ответов'
+                      : reviewCount.data
+                        ? `Непроверенных ответов: ${reviewCount.data.count}`
+                        : 'Загружаем число непроверенных ответов'
+                  }
+                >
+                  {reviewCount.error
+                    ? '?'
+                    : reviewCount.data
+                      ? reviewCount.data.count > 99
+                        ? '99+'
+                        : reviewCount.data.count
+                      : '…'}
+                </span>
+              )}
             </NavLink>
           </nav>
           {data?.admin && (

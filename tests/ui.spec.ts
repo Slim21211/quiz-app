@@ -56,7 +56,30 @@ async function mockApi(
     const payload: unknown = request.postDataJSON();
     let response: unknown;
     if (action === 'my-progress') response = progress;
-    else if (action === 'abandon') response = { success: true };
+    else if (action === 'review-count')
+      response = {
+        count: participants
+          .flatMap((participant) => participant.answers)
+          .filter((answer) => answer.is_correct === null).length,
+      };
+    else if (action === 'my-review') {
+      const attempt = progress.find(
+        (item) => item.quiz_id === requestUrl.searchParams.get('quizId'),
+      );
+      response = !attempt?.completed
+        ? { status: 'in_progress' }
+        : attempt.correct_count === null
+          ? { status: 'pending' }
+          : {
+              status: 'ready',
+              correct_count: attempt.correct_count,
+              total_count: attempt.total_count,
+              answers: participants[0].answers.map((answer) => ({
+                ...answer,
+                is_correct: (attempt.correct_count ?? 0) > 0,
+              })),
+            };
+    } else if (action === 'abandon') response = { success: true };
     else if (action === 'session') response = { admin };
     else if (action === 'login') {
       admin = true;
@@ -256,14 +279,17 @@ test('administrator signs in and creates a quiz with its own address', async ({ 
 test('administrator can score, reverse and clear a verdict', async ({ page }) => {
   await mockApi(page, true);
   await page.goto('/admin/check');
+  await expect(page.getByLabel('Непроверенных ответов: 1', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /Команда Альфа/ }).click();
   await expect(page.getByText('Те же слова в другом порядке.', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Засчитать', exact: true }).click();
   await expect(page.getByText('Засчитан', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Непроверенных ответов: 0', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Не засчитать', exact: true }).click();
   await expect(page.getByText('Не засчитан', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Снять оценку', exact: true }).click();
   await expect(page.getByText('Ожидает проверки', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Непроверенных ответов: 1', { exact: true })).toBeVisible();
 });
 
 test('catalog failure displays a retry action instead of endless loading', async ({ page }) => {
@@ -689,4 +715,77 @@ test('local Telegram SDK starts with telegram.org blocked and forwards launch da
   expect(apiInitData.length).toBeGreaterThan(0);
   expect(apiInitData.every((value) => value === initData)).toBe(true);
   expect(externalRequests).toEqual([]);
+});
+
+test('only the completed and reviewed participant sees a personal answer breakdown', async ({
+  page,
+}) => {
+  await mockApi(page, false, [
+    {
+      quiz_id: quizId,
+      correct_count: 1,
+      answered_count: 1,
+      pending_count: 0,
+      total_count: 1,
+      completed: true,
+    },
+  ]);
+  await page.goto('/quiz/cinema/results');
+  const review = page.getByRole('region', { name: 'Ваш личный результат' });
+  await expect(review.getByText('Этот разбор виден только вам.', { exact: false })).toBeVisible();
+  await review.getByText('Посмотреть свои ответы', { exact: true }).click();
+  await expect(review.getByText('Тарковский Андрей', { exact: true })).toBeVisible();
+  await expect(review.getByText('Андрей Тарковский', { exact: true })).toBeVisible();
+  await expect(review.getByText('Засчитан', { exact: true })).toBeVisible();
+});
+
+test('personal answer breakdown is withheld while any answers are pending', async ({ page }) => {
+  await mockApi(page, false, [
+    {
+      quiz_id: quizId,
+      correct_count: null,
+      answered_count: 1,
+      pending_count: 1,
+      total_count: 1,
+      completed: true,
+    },
+  ]);
+  await page.goto('/quiz/cinema/results');
+  await expect(page.getByText('Ваши ответы на проверке.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Посмотреть свои ответы', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Андрей Тарковский', { exact: true })).toHaveCount(0);
+});
+
+test('public visitors do not fetch personal answers or the administration count', async ({
+  page,
+}) => {
+  await mockApi(page);
+  const privateActions: string[] = [];
+  page.on('request', (request) => {
+    const action = new URL(request.url()).searchParams.get('action');
+    if (action === 'my-review' || action === 'review-count') privateActions.push(action);
+  });
+  await page.goto('/quiz/cinema/results');
+  await expect(page.getByRole('list', { name: 'Итоговые результаты' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Ваш личный результат' })).toHaveCount(0);
+  expect(privateActions).toEqual([]);
+});
+
+test('the logo and favicon share the same SVG and the administration badge fits a narrow screen', async ({
+  page,
+}) => {
+  await mockApi(page, true);
+  await page.route('**/api/quiz?action=review-count', (route) =>
+    route.fulfill({ json: { count: 1234 } }),
+  );
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.goto('/');
+  await expect(page.getByLabel('Непроверенных ответов: 1234', { exact: true })).toHaveText('99+');
+  const logo = page.getByRole('link', { name: 'Quizroom — каталог квизов' }).locator('img');
+  await expect(logo).toHaveAttribute('src', '/brand.svg');
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/brand.svg');
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth,
+  );
+  expect(overflow).toBe(false);
 });

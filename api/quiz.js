@@ -97,6 +97,8 @@ const methods = {
   logout: ['POST'],
   quizzes: ['GET'],
   'my-progress': ['GET'],
+  'my-review': ['GET'],
+  'review-count': ['GET'],
   quiz: ['POST', 'PATCH'],
   questions: ['GET'],
   question: ['POST', 'PATCH', 'DELETE'],
@@ -145,8 +147,54 @@ export default async function handler(request, response) {
       setSession(request, response, 'quiz_admin', '', 0);
       return response.json({ success: true });
     }
-    if (['quiz', 'questions', 'question', 'review'].includes(action)) requireAdmin(request);
+    if (['quiz', 'questions', 'question', 'review', 'review-count'].includes(action))
+      requireAdmin(request);
+    const reviewPlayer = action === 'my-review' ? findPlayer(request) : null;
+    if (action === 'my-review' && !reviewPlayer)
+      throw new HttpError(401, 'Для просмотра своих ответов откройте квиз через Telegram-бота.');
     const supabase = database();
+    if (action === 'review-count') {
+      const result = await supabase
+        .from('answers')
+        .select('id', { count: 'exact', head: true })
+        .is('is_correct', null);
+      checked(result);
+      return response.json({ count: result.count || 0 });
+    }
+    if (action === 'my-review') {
+      // Read eligibility and answer details in one database snapshot.
+      const participant = checked(
+        await supabase
+          .from('participants')
+          .select(
+            'answers(id, answer_text, is_correct, question:questions(id, question_text, correct_answer, order_number)), quiz:quizzes!inner(is_active, questions(count))',
+          )
+          .eq('quiz_id', uuidField(request.query.quizId))
+          .eq('telegram_id', reviewPlayer.id)
+          .eq('quiz.is_active', true)
+          .maybeSingle(),
+      );
+      if (!participant) return response.json({ status: 'not_started' });
+      const summary = summarizeAnswers(
+        participant.answers,
+        participant.quiz.questions[0]?.count || 0,
+      );
+      if (!summary.completed) return response.json({ status: 'in_progress' });
+      if (summary.pending_count > 0) return response.json({ status: 'pending' });
+      return response.json({
+        status: 'ready',
+        correct_count: summary.correct_count,
+        total_count: summary.total_count,
+        answers: participant.answers
+          .map(({ id, answer_text, is_correct, question }) => ({
+            id,
+            answer_text,
+            is_correct,
+            question,
+          }))
+          .sort((left, right) => left.question.order_number - right.question.order_number),
+      });
+    }
     if (action === 'quizzes') {
       let query = supabase
         .from('quizzes')
